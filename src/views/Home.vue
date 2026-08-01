@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { MODES, useGameStore } from '../stores/game.js'
 import { useSettingsStore } from '../stores/settings.js'
@@ -22,6 +22,18 @@ const isAi = computed(() => mode.value === 'ai')
 // 当前所选尺寸的信息（hero 文案动态化）
 const curSize = computed(() => SIZES.find(s => s.id === size.value) || SIZES[0])
 const boxesNum = computed(() => curSize.value.grid * curSize.value.grid - 1)
+
+// 未完成对局（退出后缓存保留，主页可继续或放弃）
+const hasSave = ref(false)
+onMounted(() => { hasSave.value = game.hasSnapshot() })
+function resumeGame() {
+  const snap = game.loadSnapshot()
+  if (snap && game.restore(snap)) router.push('/game')
+}
+function discardSave() {
+  game.clearSnapshot()
+  hasSave.value = false
+}
 
 function start() {
   let players
@@ -49,6 +61,16 @@ function start() {
       <p class="body-md muted mt-8" style="max-width: 520px">
         {{ curSize.grid }}×{{ curSize.grid }} 方格，去掉一个角落，{{ boxesNum }} 个格子。轮流连边，围成方格即得分，多者为胜。
       </p>
+    </div>
+
+    <!-- 未完成对局恢复条 -->
+    <div v-if="hasSave" class="resume-bar fade-up">
+      <div class="col flex-1">
+        <span class="body-sm">有一局未完成的对局</span>
+        <span class="caption muted" style="text-transform: none; letter-spacing: 0">刷新或退出本局时已自动保存</span>
+      </div>
+      <button class="btn btn-primary" @click="resumeGame">继续</button>
+      <button class="btn btn-text muted" @click="discardSave">放弃</button>
     </div>
 
     <!-- 模式选择 -->
@@ -140,6 +162,19 @@ function start() {
   gap: 16px;
 }
 .avatar.big { width: 52px; height: 52px; font-size: 26px; }
+
+/* 未完成对局恢复条 */
+.resume-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  background: var(--card);
+  border: 1px solid var(--hairline-strong);
+  border-left: 3px solid var(--p2);
+  border-radius: var(--r-xl);
+  padding: 14px 18px;
+}
 
 @media (max-width: 640px) {
   .hero { padding-top: 16px; }

@@ -5,12 +5,13 @@ defineProps({
   active: Boolean,
   turn: Boolean,
   ai: Boolean,
-  aiThinking: Boolean
+  aiThinking: Boolean,
+  playerIndex: { type: Number, default: 0 }
 })
 </script>
 
 <template>
-  <div v-if="player" class="player-card" :class="{ on: active }">
+  <div v-if="player" class="player-card" :class="[{ on: active }, playerIndex === 0 ? 'pidx0' : 'pidx1']">
     <div class="avatar" :class="turn ? 'turn-glow' : ''">{{ player.avatar }}</div>
     <div class="col flex-1" style="min-width: 0">
       <div class="row gap-8">
@@ -33,12 +34,15 @@ defineProps({
   border: 1px solid var(--hairline);
   border-radius: var(--r-xl);
   padding: 16px 18px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .player-card.on {
   border-color: var(--ink);
   box-shadow: var(--shadow-soft);
 }
+/* 换手提示：当前行动方带玩家色淡底 */
+.player-card.on.pidx0 { background: var(--p1-fill); }
+.player-card.on.pidx1 { background: var(--p2-fill); }
 .pname {
   font-size: 16px;
   font-weight: 500;

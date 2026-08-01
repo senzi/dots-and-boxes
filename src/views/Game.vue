@@ -67,12 +67,24 @@ function again() {
 
 // 防误触返回
 function goHome() {
-  if (game.over || confirm('退出本局？')) router.push('/')
+  // 已结束：直接清快照回主页
+  if (game.over) {
+    game.clearSnapshot()
+    router.push('/')
+    return
+  }
+  // 对局中退出：缓存局面 + 内联通知（刷新可恢复）
+  game.saveSnapshot()
+  showToast('本局已保存，刷新可继续')
+  setTimeout(() => router.push('/'), 700)
 }
 
 onMounted(() => {
-  // 直接访问 /game 但没有对局 → 回首页
-  if (!game.board) router.replace('/')
+  // 刷新 / 直链进入：无活跃对局时尝试恢复缓存，否则回首页
+  if (!game.board) {
+    const snap = game.loadSnapshot()
+    if (!game.restore(snap)) router.replace('/')
+  }
 })
 </script>
 
@@ -89,15 +101,15 @@ onMounted(() => {
 
     <!-- 面对面：左右玩家 + 中央棋盘 -->
     <div v-if="game.board && isFace" class="face-layout">
-      <div class="side-panel" :class="{ active: !game.over && game.current === 0 }">
-        <PlayerCard :player="game.players[0]" :score="scores[0]" :active="!game.over && game.current === 0" :turn="!game.over && game.current === 0" />
+      <div class="side-panel rot90" :class="{ active: !game.over && game.current === 0 }">
+        <PlayerCard :player="game.players[0]" :score="scores[0]" :player-index="0" :active="!game.over && game.current === 0" :turn="!game.over && game.current === 0" />
       </div>
       <div class="board-wrap">
         <Board :board="game.board" :players="game.players" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking" @place="onPlace" />
         <div v-if="toast" class="toast">{{ toast }}</div>
       </div>
-      <div class="side-panel rot180" :class="{ active: !game.over && game.current === 1 }">
-        <PlayerCard :player="game.players[1]" :score="scores[1]" :active="!game.over && game.current === 1" :turn="!game.over && game.current === 1" />
+      <div class="side-panel rot-90" :class="{ active: !game.over && game.current === 1 }">
+        <PlayerCard :player="game.players[1]" :score="scores[1]" :player-index="1" :active="!game.over && game.current === 1" :turn="!game.over && game.current === 1" />
       </div>
     </div>
 
@@ -105,13 +117,13 @@ onMounted(() => {
     <div v-else-if="game.board" class="stack-layout">
       <div class="players-bar">
         <PlayerCard
-          :player="game.players[0]" :score="scores[0]"
+          :player="game.players[0]" :score="scores[0]" :player-index="0"
           :active="!game.over && game.current === 0"
           :turn="!game.over && game.current === 0 && !game.aiThinking"
         />
         <div class="vs muted">VS</div>
         <PlayerCard
-          :player="game.players[1]" :score="scores[1]"
+          :player="game.players[1]" :score="scores[1]" :player-index="1"
           :active="!game.over && game.current === 1"
           :turn="!game.over && game.current === 1 && !game.aiThinking"
           :ai="game.mode === 'ai'"
@@ -159,7 +171,9 @@ onMounted(() => {
   margin-top: 16px;
 }
 .face-layout .side-panel { width: 200px; flex-shrink: 0; }
-.face-layout .rot180 { transform: rotate(180deg); }
+/* 面对面：玩家在短边（左右）对战，标签各自朝向自己的玩家 */
+.face-layout .rot-90 { transform: rotate(-90deg); }
+.face-layout .rot90 { transform: rotate(90deg); }
 .face-layout .board-wrap { flex: 1; max-width: 620px; }
 
 .stack-layout { display: flex; flex-direction: column; align-items: center; gap: 20px; margin-top: 16px; }
@@ -244,7 +258,8 @@ onMounted(() => {
 @media (max-width: 860px) {
   .face-layout { flex-direction: column; gap: 12px; }
   .face-layout .side-panel { width: 100%; max-width: 620px; }
-  .face-layout .rot180 { transform: rotate(0deg); }
+  .face-layout .rot-90 { transform: rotate(0deg); }
+  .face-layout .rot90 { transform: rotate(0deg); }
   .face-layout .board-wrap { order: -1; }
 }
 </style>

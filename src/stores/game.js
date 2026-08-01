@@ -6,6 +6,8 @@ import {
 } from '../engine/board.js'
 import { getAiMove, aiMoveDelay } from '../engine/ai.js'
 
+const SAVE_KEY = 'dnb63_save_v1'
+
 function uid() {
   return Math.random().toString(36).slice(2, 10)
 }
@@ -62,11 +64,59 @@ export const useGameStore = defineStore('game', {
       this.winner = null
       this.aiThinking = false
       this.moveCount = 0
+      this.clearSnapshot()        // 开新局：作废旧缓存
       // AI 先手（随机决定谁先，简单起见玩家先手；AI 模式固定玩家先手）
       if (mode === 'ai' && Math.random() < 0.08) {
         // 小概率 AI 先手，增加变化
         this.triggerAi()
       }
+    },
+
+    // —— 对局快照（退出/刷新可恢复） ——
+    saveSnapshot() {
+      if (!this.board) return
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({
+          mode: this.mode,
+          aiLevel: this.aiLevel,
+          size: this.size,
+          players: this.players,
+          board: this.board,
+          current: this.current,
+          moveCount: this.moveCount,
+          over: this.over,
+          winner: this.winner
+        }))
+      } catch (e) { /* localStorage 不可用时静默 */ }
+    },
+    loadSnapshot() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY)
+        return raw ? JSON.parse(raw) : null
+      } catch { return null }
+    },
+    hasSnapshot() {
+      return !!localStorage.getItem(SAVE_KEY)
+    },
+    clearSnapshot() {
+      localStorage.removeItem(SAVE_KEY)
+    },
+    restore(snap) {
+      if (!snap || !snap.board) return false
+      this.mode = snap.mode
+      this.aiLevel = snap.aiLevel
+      this.size = snap.size
+      setBoardSize(snap.size)
+      this.players = snap.players
+      this.board = snap.board
+      this.current = snap.current
+      this.moveCount = snap.moveCount
+      this.over = snap.over
+      this.winner = snap.winner
+      this.aiThinking = false
+      this.lastMove = null
+      this.lastGain = []
+      return true
     },
 
     // 玩家落子。返回是否完成格子（继续行动）
@@ -86,6 +136,7 @@ export const useGameStore = defineStore('game', {
         this.current = 1 - player
       }
       this.checkEnd()
+      this.saveSnapshot()   // 每步落子后缓存，刷新可恢复
       return res
     },
 
