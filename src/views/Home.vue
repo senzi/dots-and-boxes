@@ -19,6 +19,10 @@ const p2 = ref({ name: settings.defaultName2, avatar: settings.defaultAvatar2 })
 
 const isAi = computed(() => mode.value === 'ai')
 
+// 当前所选尺寸的信息（hero 文案动态化）
+const curSize = computed(() => SIZES.find(s => s.id === size.value) || SIZES[0])
+const boxesNum = computed(() => curSize.value.grid * curSize.value.grid - 1)
+
 function start() {
   let players
   if (mode.value === 'ai') {
@@ -40,10 +44,10 @@ function start() {
 <template>
   <div class="page fade-up">
     <div class="hero">
-      <div class="caption">63 · a pencil &amp; paper classic</div>
+      <div class="caption">{{ boxesNum }} · a pencil &amp; paper classic</div>
       <h1 class="display display-mega mt-8">Dots and Boxes</h1>
       <p class="body-md muted mt-8" style="max-width: 520px">
-        8×8 点阵，去掉一个角落，63 个格子。轮流连边，围成方格即得分，多者为胜。
+        {{ curSize.grid }}×{{ curSize.grid }} 方格，去掉一个角落，{{ boxesNum }} 个格子。轮流连边，围成方格即得分，多者为胜。
       </p>
     </div>
 
@@ -76,19 +80,6 @@ function start() {
       </div>
     </div>
 
-    <!-- AI 难度 -->
-    <div v-if="isAi" class="mt-24 fade-up">
-      <div class="caption">AI 难度</div>
-      <div class="row gap-12 mt-16">
-        <button
-          v-for="lv in AI_LEVELS" :key="lv.id"
-          class="level-pill"
-          :class="{ active: aiLevel === lv.id }"
-          @click="aiLevel = lv.id"
-        >{{ lv.name }} · {{ lv.desc }}</button>
-      </div>
-    </div>
-
     <!-- 玩家设置 -->
     <div class="mt-32">
       <div class="caption">玩家</div>
@@ -111,6 +102,18 @@ function start() {
           </div>
           <div v-if="!isAi" class="mt-16">
             <AvatarNamePicker v-model:avatar="p2.avatar" v-model:name="p2.name" placeholder="玩家 2 昵称" />
+          </div>
+          <div v-else class="mt-16">
+            <div class="caption">AI 难度</div>
+            <div class="row gap-12 mt-8" style="flex-wrap: wrap">
+              <button
+                v-for="lv in AI_LEVELS" :key="lv.id"
+                class="level-pill"
+                :class="{ active: aiLevel === lv.id }"
+                :title="lv.desc"
+                @click="aiLevel = lv.id"
+              >{{ lv.name }}</button>
+            </div>
           </div>
         </div>
       </div>
