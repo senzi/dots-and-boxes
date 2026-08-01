@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Board from '../components/Board.vue'
+import PlayerCard from '../components/PlayerCard.vue'
 import { useGameStore } from '../stores/game.js'
 import { useHistoryStore } from '../stores/settings.js'
 import { AI_LEVELS } from '../engine/ai.js'
@@ -144,35 +145,6 @@ onMounted(() => {
     </div>
   </div>
 </template>
-
-<script>
-// 玩家卡片（局部组件）
-export default {
-  name: 'PlayerCard',
-  props: {
-    player: Object,
-    score: Number,
-    active: Boolean,
-    turn: Boolean,
-    ai: Boolean,
-    aiThinking: Boolean
-  },
-  template: `
-    <div class="player-card" :class="{ on: active }">
-      <div class="avatar" :class="turn ? 'turn-glow' : ''">{{ player.avatar }}</div>
-      <div class="col flex-1" style="min-width: 0">
-        <div class="row gap-8">
-          <span class="pname">{{ player.name }}</span>
-          <span v-if="ai" class="badge" style="background: var(--surface-strong)">AI</span>
-          <span v-if="aiThinking" class="thinking">思考中…</span>
-        </div>
-        <div class="body-sm muted">{{ score }} 格</div>
-      </div>
-      <div class="score-big">{{ score }}</div>
-    </div>
-  `
-}
-</script>
 
 <style scoped>
 .game-page { max-width: 1000px; }
