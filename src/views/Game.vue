@@ -54,7 +54,8 @@ watch(() => game.over, (v) => {
       players: game.players.map((p, i) => ({ ...p, score: i === 0 ? a : b })),
       result: game.winner === -1 ? 'draw' : 'win',
       winnerId: game.winner === -1 ? null : game.players[game.winner]?.id,
-      score: [a, b]
+      score: [a, b],
+      board: JSON.parse(JSON.stringify(game.board))  // 终盘局面快照（可回看）
     })
   }
 })
