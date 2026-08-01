@@ -257,6 +257,35 @@ html, body {
 .mt-8 { margin-top: 8px; } .mt-16 { margin-top: 16px; } .mt-24 { margin-top: 24px; } .mt-32 { margin-top: 32px; }
 .flex-1 { flex: 1; }
 
+/* 页脚 */
+.site-footer {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 24px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted-soft);
+  border-top: 1px solid var(--hairline-soft);
+}
+.site-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.site-footer a:hover { color: var(--ink); }
+.site-footer .sep { opacity: 0.6; }
+.site-footer .footer-brand {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
 /* 淡入动画 */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }

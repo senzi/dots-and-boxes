@@ -35,6 +35,15 @@ function close() {
 }
 const selGrid = computed(() => selected.value ? gridOf(selected.value.boardSize) : 8)
 
+// 清空记录（内联二次确认）
+const confirmClear = ref(false)
+function askClear() { confirmClear.value = true }
+function doClear() {
+  history.clear()
+  confirmClear.value = false
+}
+function cancelClear() { confirmClear.value = false }
+
 function resultBadge(rec) {
   if (rec.result === 'draw') return { text: '平局', cls: '' }
   if (rec.winnerId === rec.players?.[0]?.id) return { text: 'P1 胜', cls: 'w1' }
@@ -46,7 +55,14 @@ function resultBadge(rec) {
   <div class="page fade-up" style="max-width: 760px">
     <div class="row-between">
       <router-link to="/" class="btn btn-text">← 返回</router-link>
-      <button class="btn btn-text muted" @click="history.clear()">清空记录</button>
+      <div class="row gap-8">
+        <template v-if="confirmClear">
+          <span class="body-sm muted">确认清空全部记录？</span>
+          <button class="btn btn-text danger" @click="doClear">确认清空</button>
+          <button class="btn btn-text muted" @click="cancelClear">取消</button>
+        </template>
+        <button v-else class="btn btn-text muted" @click="askClear">清空记录</button>
+      </div>
     </div>
 
     <h1 class="display display-lg mt-16">最近对局</h1>
@@ -114,6 +130,8 @@ function resultBadge(rec) {
 
 <style scoped>
 .pname { font-weight: 500; }
+.btn-text.danger { color: var(--semantic-error); }
+.btn-text.danger:hover { background: rgba(220, 38, 38, 0.08); }
 .rec-row {
   padding: 16px 20px;
   cursor: pointer;
