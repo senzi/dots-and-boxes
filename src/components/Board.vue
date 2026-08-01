@@ -6,6 +6,7 @@ import { edgeId, isEdgeUsable } from '../engine/board.js'
 const props = defineProps({
   board: { type: Object, required: true },   // {edges, boxes}
   players: { type: Array, default: () => [] }, // [{avatar}]
+  lastMove: { type: Object, default: null },    // {dir,r,c,player}
   interactive: { type: Boolean, default: true },
   disabled: { type: Boolean, default: false },
   gridSize: { type: Number, default: 8 }      // 方格数（8 或 6）
@@ -46,6 +47,9 @@ const vEdges = computed(() => {
 })
 
 const allEdges = computed(() => [...hEdges.value, ...vEdges.value])
+const lastMoveId = computed(() => props.lastMove
+  ? edgeId(props.lastMove.dir, props.lastMove.r, props.lastMove.c)
+  : null)
 
 // 完成的格子
 const boxes = computed(() => {
@@ -113,9 +117,11 @@ function onPlace(e) {
       :class="[
         board.edges[e.id] !== null ? 'placed' : '',
         board.edges[e.id] === 0 ? 'p1' : '',
-        board.edges[e.id] === 1 ? 'p2' : ''
+        board.edges[e.id] === 1 ? 'p2' : '',
+        e.id === lastMoveId ? 'last-move' : ''
       ]"
     >
+      <line v-if="e.id === lastMoveId" class="last-move-halo" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" />
       <line :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" />
       <!-- 命中区：横向或纵向细长矩形 -->
       <rect
@@ -173,6 +179,17 @@ function onPlace(e) {
 .edge.placed.p2 line { stroke: var(--p2); stroke-width: 5; }
 .edge.p1:hover line { stroke: var(--p1); }
 .edge.p2:hover line { stroke: var(--p2); }
+.edge.placed.last-move .last-move-halo {
+  stroke: #f59e0b;
+  stroke-width: 13;
+  opacity: 0.88;
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.9));
+  animation: last-move-pulse 1.1s ease-in-out infinite alternate;
+}
+@keyframes last-move-pulse {
+  from { opacity: 0.58; stroke-width: 11; }
+  to { opacity: 0.95; stroke-width: 14; }
+}
 
 /* 点 */
 .dot { fill: var(--ink); }

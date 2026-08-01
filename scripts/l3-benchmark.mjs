@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import { createBoard, placeEdge, isGameOver, scores } from '../src/engine/board.js'
-import { aiMoveLevel2, aiMoveLevel3 } from '../src/engine/ai.js'
+import { aiMoveLevel2, aiMoveLevel3, l3ControlAfterMove } from '../src/engine/ai.js'
 
 const games = Number(process.argv[2] || 20)
 let wins = 0
@@ -14,11 +14,15 @@ for (let gameIndex = 0; gameIndex < games; gameIndex++) {
   const state = createBoard()
   const l3Seat = gameIndex % 2
   let player = 0
+  let lastMove = null
+  let controlOwner = 1
   while (!isGameOver(state)) {
     const before = performance.now()
-    const move = player === l3Seat ? aiMoveLevel3(state, player) : aiMoveLevel2(state, player)
+    const move = player === l3Seat ? aiMoveLevel3(state, player, lastMove, controlOwner) : aiMoveLevel2(state, player)
     worstMoveMs = Math.max(worstMoveMs, performance.now() - before)
+    controlOwner = l3ControlAfterMove(state, move, player, controlOwner)
     const result = placeEdge(state, move.dir, move.r, move.c, player)
+    lastMove = { ...move, player }
     if (!result.gained) player = 1 - player
   }
   const result = scores(state)

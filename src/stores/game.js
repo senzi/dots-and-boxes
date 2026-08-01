@@ -4,7 +4,7 @@ import {
   createBoard, placeEdge, isGameOver, scores, remainingEdges, legalMoves,
   setBoardSize, SIZES, DEFAULT_SIZE, gridSize
 } from '../engine/board.js'
-import { getAiMove, aiMoveDelay } from '../engine/ai.js'
+import { getAiMove, aiMoveDelay, l3ControlAfterMove } from '../engine/ai.js'
 
 const SAVE_KEY = 'dnb63_save_v1'
 
@@ -28,6 +28,7 @@ export const useGameStore = defineStore('game', {
     current: 0,          // 当前行动玩家 index
     lastMove: null,      // {dir,r,c,player}
     lastGain: [],        // 最近一次落子完成的格子
+    controlOwner: 1,     // L3 结构策略推定的主动权方
     over: false,
     winner: null,        // 0 | 1 | -1(平局)
     aiThinking: false,
@@ -60,6 +61,7 @@ export const useGameStore = defineStore('game', {
       this.current = 0
       this.lastMove = null
       this.lastGain = []
+      this.controlOwner = 1
       this.over = false
       this.winner = null
       this.aiThinking = false
@@ -83,6 +85,7 @@ export const useGameStore = defineStore('game', {
           players: this.players,
           board: this.board,
           current: this.current,
+          controlOwner: this.controlOwner,
           moveCount: this.moveCount,
           over: this.over,
           winner: this.winner
@@ -110,6 +113,7 @@ export const useGameStore = defineStore('game', {
       this.players = snap.players
       this.board = snap.board
       this.current = snap.current
+      this.controlOwner = snap.controlOwner === 0 || snap.controlOwner === 1 ? snap.controlOwner : 1 - snap.current
       this.moveCount = snap.moveCount
       this.over = snap.over
       this.winner = snap.winner
@@ -127,8 +131,11 @@ export const useGameStore = defineStore('game', {
 
     applyMove(dir, r, c) {
       const player = this.current
+      const move = { dir, r, c }
+      const nextControlOwner = l3ControlAfterMove(this.board, move, player, this.controlOwner)
       const res = placeEdge(this.board, dir, r, c, player)
       if (!res.ok) return res
+      this.controlOwner = nextControlOwner
       this.moveCount++
       this.lastMove = { dir, r, c, player }
       this.lastGain = res.completed
@@ -158,7 +165,7 @@ export const useGameStore = defineStore('game', {
       const state = this.board
       const delay = aiMoveDelay(level)
       setTimeout(() => {
-        const move = getAiMove(level, state, 1)
+        const move = getAiMove(level, state, 1, this.lastMove, this.controlOwner)
         if (move) {
           this.applyMove(move.dir, move.r, move.c)
         }

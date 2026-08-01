@@ -9,7 +9,7 @@
 
 - 游戏：8×8 点阵双人策略游戏，去掉一个角落点，可得分格子 **63** 个。
 - 当前状态：L1（休闲）、L2（策略）已上线；**L3（大师）已禁用**，旧实现单步搜索可达 7s+、完整对局超 120s，不满足交互要求。
-- 目标：L3 在浏览器内（非 Worker）单步 ≤ 2s（理想 ≤ 1s），具备稳定高水平策略。
+- 目标：L3 在浏览器内（非 Worker）普通单步尽量 ≤ 2s；复杂安全前沿允许最多约 10s，优先保证策略质量。
 - 技术栈：纯前端 Vue 3 + Vite，AI 为纯 JS 模块（ESM），无后端。
 
 ## 2. 棋盘模型（数据结构）
@@ -73,8 +73,17 @@ interface BoardState {
 // 文件：src/engine/ai.js
 // 输入：当前棋盘状态 + AI 玩家编号
 // 输出：一个合法落子；若没有合法落子可返回 null（正常不会发生）
-export function aiMoveLevel3(state: BoardState, player: 0 | 1): EdgeMove | null
+export function aiMoveLevel3(
+  state: BoardState,
+  player: 0 | 1,
+  lastMove?: EdgeMove & { player: 0 | 1 },
+  controlOwner?: 0 | 1
+): EdgeMove | null
 ```
+
+`lastMove` 为向后兼容的可选提示，用于安全阶段优先贴近对方上一手布局；
+`controlOwner` 是游戏层持续维护的推定主动权方，用于切换保权/争权策略。
+二者未提供时 L3 仍可仅根据 `state` 正常决策。
 
 ### 4.2 规则语义（务必遵守）
 
@@ -85,7 +94,7 @@ export function aiMoveLevel3(state: BoardState, player: 0 | 1): EdgeMove | null
 
 ### 4.3 性能约束（硬性）
 
-- 单步计算时间：**≤ 2000ms**（中低端设备），目标 ≤ 800ms。
+- 单步计算时间：普通局面目标 **≤ 2000ms**；复杂安全前沿硬截止约 **10000ms**。
 - 内存：单步内临时分配可控（GC 停顿不明显）。
 - 禁止 `Worker`、`WebAssembly`、网络请求、`localStorage`（暂时保持单线程同步实现，后续可再演进）。
 - 建议自设**节点预算**兜底（旧实现用 20 万节点，仍偏慢，请结合查表优化后重新标定）。

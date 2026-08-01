@@ -106,7 +106,7 @@ onMounted(() => {
         <PlayerCard :player="game.players[0]" :score="scores[0]" :player-index="0" :active="!game.over && game.current === 0" :turn="!game.over && game.current === 0" />
       </div>
       <div class="board-wrap">
-        <Board :board="game.board" :players="game.players" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking" @place="onPlace" />
+        <Board :board="game.board" :players="game.players" :last-move="game.lastMove" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking" @place="onPlace" />
         <div v-if="toast" class="toast">{{ toast }}</div>
       </div>
       <div class="side-panel rot-90" :class="{ active: !game.over && game.current === 1 }">
@@ -132,7 +132,7 @@ onMounted(() => {
         />
       </div>
       <div class="board-wrap">
-        <Board :board="game.board" :players="game.players" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking || game.isAiTurn" @place="onPlace" />
+        <Board :board="game.board" :players="game.players" :last-move="game.lastMove" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking || game.isAiTurn" @place="onPlace" />
         <div v-if="toast" class="toast">{{ toast }}</div>
       </div>
     </div>
