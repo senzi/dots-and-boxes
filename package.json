@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:engine": "node scripts/self-test.mjs",
+    "test:l3": "node scripts/l3-test.mjs",
+    "benchmark:l3": "node scripts/l3-benchmark.mjs 20"
   },
   "dependencies": {
     "pinia": "^2.2.6",

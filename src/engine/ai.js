@@ -1,10 +1,9 @@
 // 三档 AI —— Dots and Boxes 63
 // Level 1 休闲：随机 + 避坑
 // Level 2 策略：局面评分 + 安全边 + 链感知
-// Level 3 大师：minimax + alpha-beta + 终局精确搜索 + 链评估启发式
+// Level 3 大师：安全前沿 + 残余分块 + 严格 handout + 有界吃子搜索
 import {
-  placeEdge, legalMoves, isGameOver, cloneState,
-  boxEdges, boxFilledCount, remainingEdges, TOTAL_BOXES, edgeId,
+  placeEdge, legalMoves, cloneState, edgeId,
   buildTables, EDGE_BOXES, BOX_EDGE_IDS, immediateGainFast, boxFilledCountFast
 } from './board.js'
 
@@ -12,8 +11,8 @@ buildTables()
 
 export const AI_LEVELS = [
   { id: 1, name: '休闲', desc: '新手友好，随机落子、避开陷阱' },
-  { id: 2, name: '策略', desc: '普通玩家水平，安全边 + 链分析' }
-  // L3 大师已禁用（v1 性能不达标），待算法专家重写后恢复
+  { id: 2, name: '策略', desc: '普通玩家水平，安全边 + 链分析' },
+  { id: 3, name: '大师', desc: '安全前沿 + 分块控制 + 吃子链搜索' }
 ]
 
 // ---------- 工具 ----------
@@ -48,31 +47,9 @@ function moveDanger(state, dir, r, c, player) {
   return danger
 }
 
-function boxEdgesForEdge(state, dir, r, c) {
-  const res = []
-  if (dir === 'H') {
-    if (r - 1 >= 0) res.push([r - 1, c])
-    if (r < 8) res.push([r, c])
-  } else {
-    if (c - 1 >= 0) res.push([r, c - 1])
-    if (c < 8) res.push([r, c])
-  }
-  return res.filter(([br, bc]) => !(br === 0 && bc === 0) && state.boxes[`${br}-${bc}`] === null)
-}
-
 // 若某条边能立即完成格子，返回收益格子数 —— 查表版
 function immediateGain(state, dir, r, c) {
   return immediateGainFast(state, edgeId(dir, r, c))
-}
-
-// 随机抽样 K 个移动（Fisher-Yates 部分洗牌）
-function sampleMoves(moves, k) {
-  const arr = moves.slice()
-  for (let i = 0; i < k && i < arr.length; i++) {
-    const j = i + Math.floor(Math.random() * (arr.length - i))
-    ;[arr[i], arr[j]] = [arr[j], arr[i]]
-  }
-  return arr.slice(0, k)
 }
 
 // 吃格链模拟：假设轮到某玩家，他只吃能吃的格子，
@@ -159,104 +136,248 @@ export function aiMoveLevel2(state, player) {
   return best
 }
 
-// ---------- Level 3 大师（已禁用） ----------
-// v1 性能不达标：单步搜索可达 7s+，终局吃格链分支爆炸。
-// 已实现的探索：minimax + alpha-beta + 节点预算 + 安全边裁剪 + 移动抽样 + 静态查表。
-// 待算法专家重写（方向：链/环结构分析、终局数据库、对称性剪枝）。
-// 代码保留供参考，UI 与 getAiMove 已不引用。
-let nodeBudget = 0
-function chainAnalysis(state, player) {
-  // 链长估算：当前存在的、由 2 边格组成的连通链（简化：直接统计孤立 2 边格对）
-  const stats = boxStats(state)
-  return stats
+// ---------- Level 3 大师 ----------
+// 设计目标：浏览器同步调用稳定低延迟。安全阶段不展开宽 minimax；进入
+// 安全前沿后按残余连通块开最小块；强制吃格阶段用有界递归选择吃子顺序。
+
+function moveKey(move) {
+  return edgeId(move.dir, move.r, move.c)
 }
 
-function search(state, depth, alpha, beta, player, me, opp, maximizing) {
-  if (--nodeBudget <= 0) return evaluate(state, me, opp)
-  if (isGameOver(state)) {
-    const mine = Object.values(state.boxes).filter(v => v === me).length
-    return (mine - (TOTAL_BOXES - mine)) * 100
+// 同一局面稳定一致，但安全边之间保留类似随机开局的分散性。
+function stateHash(state) {
+  let hash = 2166136261 >>> 0
+  for (const [id, owner] of Object.entries(state.edges)) {
+    if (owner === null) continue
+    for (let i = 0; i < id.length; i++) {
+      hash ^= id.charCodeAt(i)
+      hash = Math.imul(hash, 16777619) >>> 0
+    }
+    hash ^= owner + 1
+    hash = Math.imul(hash, 16777619) >>> 0
   }
-  // 强制吃格阶段：直接执行
-  const moves = legalMoves(state)
-  const gains = moves.filter(m => immediateGain(state, m.dir, m.r, m.c) > 0)
-  if (gains.length > 0) {
-    // 吃格分支：同一玩家继续（深度不减，吃格链必须走完；分支多时抽样）
-    let candidates = gains
-    if (candidates.length > 10) candidates = sampleMoves(candidates, 10)
-    let best = maximizing ? -Infinity : Infinity
-    for (const m of candidates) {
-      const sim = cloneState(state)
-      const g = immediateGain(sim, m.dir, m.r, m.c)
-      placeEdge(sim, m.dir, m.r, m.c, player)
-      const v = search(sim, depth, alpha, beta, player, me, opp, maximizing) + g
-      if (maximizing) {
-        best = Math.max(best, v)
-        alpha = Math.max(alpha, best)
-      } else {
-        best = Math.min(best, v)
-        beta = Math.min(beta, best)
+  return hash >>> 0
+}
+
+function stableMoveHash(seed, move) {
+  const id = moveKey(move)
+  let hash = seed ^ 0x9e3779b9
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  hash ^= hash >>> 16
+  return hash >>> 0
+}
+
+function unclaimedDegrees(state) {
+  const degrees = {}
+  for (const key of Object.keys(state.boxes)) {
+    if (state.boxes[key] === null) {
+      const [r, c] = key.split('-').map(Number)
+      degrees[key] = boxFilledCountFast(state, r, c)
+    }
+  }
+  return degrees
+}
+
+// 未填内部边连接未完成格子；边界不作为公共节点，避免把所有块错误连在一起。
+function residualComponents(state, degrees) {
+  const adjacency = {}
+  for (const key of Object.keys(degrees)) adjacency[key] = []
+  for (const [id, boxes] of Object.entries(EDGE_BOXES)) {
+    if (state.edges[id] !== null || boxes.length !== 2) continue
+    const a = `${boxes[0].r}-${boxes[0].c}`
+    const b = `${boxes[1].r}-${boxes[1].c}`
+    if (!(a in degrees) || !(b in degrees)) continue
+    adjacency[a].push(b)
+    adjacency[b].push(a)
+  }
+  const sizeByBox = {}
+  const idByBox = {}
+  const branchesById = {}
+  const boxesById = {}
+  const unseen = new Set(Object.keys(adjacency))
+  let count = 0
+  while (unseen.size) {
+    count++
+    const first = unseen.values().next().value
+    const stack = [first]
+    const found = []
+    unseen.delete(first)
+    while (stack.length) {
+      const key = stack.pop()
+      found.push(key)
+      for (const next of adjacency[key]) {
+        if (!unseen.has(next)) continue
+        unseen.delete(next)
+        stack.push(next)
       }
-      if (beta <= alpha) break
     }
-    return best
+    for (const key of found) sizeByBox[key] = found.length
+    for (const key of found) idByBox[key] = count
+    branchesById[count] = found.filter(key => degrees[key] < 2).length
+    boxesById[count] = found
   }
-  if (depth <= 0) {
-    return evaluate(state, me, opp)
+  return { count, sizeByBox, idByBox, branchesById, boxesById }
+}
+
+function componentSizeForMove(move, components) {
+  const boxes = EDGE_BOXES[moveKey(move)]
+  let size = 999
+  for (const box of boxes) {
+    const value = components.sizeByBox[`${box.r}-${box.c}`]
+    if (value !== undefined && value < size) size = value
   }
-  // 切换玩家
-  const next = 1 - player
-  const nextMaximizing = next === me
-  // 非吃格落子：裁剪候选 —— 优先安全边（不送格），无安全边才用全部；再抽样控制分支
-  let candidates = moves.filter(m => moveDanger(state, m.dir, m.r, m.c, me) === 0)
-  if (!candidates.length) candidates = moves.slice()
-  if (candidates.length > 14) candidates = sampleMoves(candidates, 14)
-  // 移动排序优化：危险度升序
-  const sorted = candidates.sort((a, b) => moveDanger(state, a.dir, a.r, a.c, me) - moveDanger(state, b.dir, b.r, b.c, me))
-  let best = maximizing ? -Infinity : Infinity
-  for (const m of sorted) {
+  return size
+}
+
+function emptyEdgeSignature(state) {
+  let signature = ''
+  let byte = 0
+  let bit = 0
+  for (const owner of Object.values(state.edges)) {
+    if (owner === null) byte |= 1 << bit
+    bit++
+    if (bit === 6) {
+      signature += String.fromCharCode(48 + byte)
+      byte = 0
+      bit = 0
+    }
+  }
+  if (bit) signature += String.fromCharCode(48 + byte)
+  return signature
+}
+
+// 估算若选择继续吃，本轮最多能取得多少格。真正决策前仍会先检查主动弃吃
+// 的双十字落点；因此这不是“强制吃完”的规则。
+function bestCaptureRun(state, player, budget, memo) {
+  if (--budget.left <= 0) return 0
+  const key = emptyEdgeSignature(state)
+  const cached = memo.get(key)
+  if (cached !== undefined) return cached
+  const captures = []
+  for (const move of legalMoves(state)) {
+    const gain = immediateGainFast(state, moveKey(move))
+    if (gain > 0) captures.push({ move, gain })
+  }
+  if (!captures.length) {
+    memo.set(key, 0)
+    return 0
+  }
+  let best = 0
+  for (const candidate of captures) {
     const sim = cloneState(state)
-    placeEdge(sim, m.dir, m.r, m.c, next)
-    const v = search(sim, depth - 1, alpha, beta, next, me, opp, nextMaximizing)
-    if (maximizing) {
-      best = Math.max(best, v)
-      alpha = Math.max(alpha, best)
-    } else {
-      best = Math.min(best, v)
-      beta = Math.min(beta, best)
+    placeEdge(sim, candidate.move.dir, candidate.move.r, candidate.move.c, player)
+    const value = candidate.gain + bestCaptureRun(sim, player, budget, memo)
+    if (value > best) best = value
+    if (budget.left <= 0) break
+  }
+  memo.set(key, best)
+  return best
+}
+
+function chooseCapture(state, player, captures) {
+  const budget = { left: 12000 }
+  const memo = new Map()
+  const seed = stateHash(state)
+  let best = null
+  let bestValue = -1
+  let bestTie = -1
+  for (const move of captures) {
+    const gain = immediateGainFast(state, moveKey(move))
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, player)
+    const value = gain + bestCaptureRun(sim, player, budget, memo)
+    const tie = stableMoveHash(seed, move)
+    if (value > bestValue || (value === bestValue && tie > bestTie)) {
+      best = move
+      bestValue = value
+      bestTie = tie
     }
-    if (beta <= alpha) break
+    if (budget.left <= 0) break
+  }
+  return best || captures[0]
+}
+
+// 严格识别 handout：模拟一条非得分边后，所有当前可吃格必须一起落入一个
+// 与其余棋盘隔离、无分叉、大小恰为 2（长链）或 4（环）的赠送块。
+function handoutMoves(state, moves, degrees) {
+  const activeBoxes = Object.keys(degrees).filter(key => degrees[key] === 3)
+  if (!activeBoxes.length) return []
+  const result = []
+  for (const move of moves) {
+    if (immediateGainFast(state, moveKey(move)) > 0) continue
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, 0)
+    const nextDegrees = unclaimedDegrees(sim)
+    const nextComponents = residualComponents(sim, nextDegrees)
+    const componentIds = new Set(activeBoxes.map(key => nextComponents.idByBox[key]).filter(id => id !== undefined))
+    if (componentIds.size !== 1) continue
+    const componentId = componentIds.values().next().value
+    const giftBoxes = nextComponents.boxesById[componentId]
+    if (!(giftBoxes.length === 2 || giftBoxes.length === 4)) continue
+    if (nextComponents.branchesById[componentId] !== 0) continue
+    // 不能在赠送块之外留下其他立即可吃格，否则对方会连同别的块一起拿走。
+    const allThreeSided = Object.keys(nextDegrees).filter(key => nextDegrees[key] === 3)
+    if (allThreeSided.some(key => nextComponents.idByBox[key] !== componentId)) continue
+    if (giftBoxes.length === Object.keys(nextDegrees).length) continue // 已是最后一块，无需留
+    result.push({ move, gift: giftBoxes.length })
+  }
+  return result
+}
+
+function chooseStableRandom(state, moves) {
+  const seed = stateHash(state)
+  let best = moves[0]
+  let bestHash = -1
+  for (const move of moves) {
+    const hash = stableMoveHash(seed, move)
+    if (hash > bestHash) {
+      best = move
+      bestHash = hash
+    }
   }
   return best
 }
 
 export function aiMoveLevel3(state, player) {
-  const opp = 1 - player
   const moves = legalMoves(state)
-  const rem = remainingEdges(state)
-  // 立即吃格
-  const gains = moves.filter(m => immediateGain(state, m.dir, m.r, m.c) > 0)
-  if (gains.length) {
-    gains.sort((a, b) => immediateGain(state, b.dir, b.r, b.c) - immediateGain(state, a.dir, a.r, a.c))
-    return gains[0]
+  if (!moves.length) return null
+
+  // 1) 吃格阶段先寻找双十字。大师 AI 允许主动弃吃以保留控制权。
+  const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  if (captures.length) {
+    const degrees = unclaimedDegrees(state)
+    const handouts = handoutMoves(state, moves, degrees)
+    if (handouts.length) {
+      const smallestGift = Math.min(...handouts.map(item => item.gift))
+      return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+    }
+    return chooseCapture(state, player, captures)
   }
-  // 终局：剩余边少 → 精确搜索。深度随剩余边数衰减，避免分支爆炸
-  // 非吃格阶段的 alpha-beta 在 depth≥6 时开局分支（~130 可选边）仍然很大
-  const depth = rem <= 30 ? 12 : rem <= 60 ? 7 : rem <= 90 ? 5 : 4
-  // 候选裁剪：优先安全边 + 抽样
-  let candidates = moves.filter(m => moveDanger(state, m.dir, m.r, m.c, player) === 0)
-  if (!candidates.length) candidates = moves.slice()
-  if (candidates.length > 16) candidates = sampleMoves(candidates, 16)
-  nodeBudget = 200000
+
+  // 2) 安全阶段：绝不主动制造三边格。等价安全边使用局面哈希确定性分散。
+  const safe = moves.filter(move => moveDanger(state, move.dir, move.r, move.c, player) === 0)
+  if (safe.length) return chooseStableRandom(state, safe)
+
+  // 3) 安全前沿：打开最小残余区块，且尽量只制造一个三边格。
+  const degrees = unclaimedDegrees(state)
+  const components = residualComponents(state, degrees)
+  const seed = stateHash(state)
   let best = null
-  let bestScore = -Infinity
-  for (const m of candidates) {
-    const sim = cloneState(state)
-    placeEdge(sim, m.dir, m.r, m.c, player)
-    const v = search(sim, depth, -Infinity, Infinity, player, player, opp, true)
-    if (v > bestScore) {
-      bestScore = v
-      best = m
+  let bestRank = null
+  for (const move of moves) {
+    const size = componentSizeForMove(move, components)
+    const danger = moveDanger(state, move.dir, move.r, move.c, player)
+    const rank = [size, danger, stableMoveHash(seed, move)]
+    if (
+      bestRank === null || rank[0] < bestRank[0] ||
+      (rank[0] === bestRank[0] && rank[1] < bestRank[1]) ||
+      (rank[0] === bestRank[0] && rank[1] === bestRank[1] && rank[2] > bestRank[2])
+    ) {
+      best = move
+      bestRank = rank
     }
   }
   return best
@@ -264,11 +385,10 @@ export function aiMoveLevel3(state, player) {
 
 export function getAiMove(level, state, player) {
   if (level === 1) return aiMoveLevel1(state, player)
-  // L2 兜底：level>=3 的旧设置一律走策略 AI（L3 已禁用）
+  if (level === 3) return aiMoveLevel3(state, player)
   return aiMoveLevel2(state, player)
 }
 
 export function aiMoveDelay(level) {
-  // L3 已禁用，延迟按 L2 封顶
-  return level >= 2 ? 350 : 350
+  return level === 3 ? 220 : 350
 }
