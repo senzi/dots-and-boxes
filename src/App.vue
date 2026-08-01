@@ -7,7 +7,7 @@
   <div class="atmo atmo-3"></div>
   <router-view />
   <footer class="site-footer">
-    <span class="footer-brand">Dots and Boxes 63</span>
+    <span class="footer-brand">Dots and Boxes</span>
     <span class="sep">·</span>
     <a href="https://github.com/senzi/dots-and-boxes" target="_blank" rel="noopener">GitHub</a>
     <span class="sep">·</span>
