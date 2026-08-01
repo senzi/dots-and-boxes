@@ -232,6 +232,67 @@ function componentSizeForMove(move, components) {
   return size
 }
 
+function residualLoonyParts(state) {
+  const degrees = unclaimedDegrees(state)
+  const active = new Set(Object.keys(degrees))
+  const adjacency = new Map([...active].map(key => [key, new Set()]))
+  const exits = new Map([...active].map(key => [key, 0]))
+  for (const [id, adjacentBoxes] of Object.entries(EDGE_BOXES)) {
+    if (state.edges[id] !== null) continue
+    const adjacent = adjacentBoxes.map(box => `${box.r}-${box.c}`).filter(key => active.has(key))
+    if (adjacent.length === 2) {
+      adjacency.get(adjacent[0]).add(adjacent[1])
+      adjacency.get(adjacent[1]).add(adjacent[0])
+    } else if (adjacent.length === 1) {
+      exits.set(adjacent[0], exits.get(adjacent[0]) + 1)
+    }
+  }
+  const parts = []
+  while (active.size) {
+    const start = active.values().next().value
+    const stack = [start]
+    const found = new Set()
+    while (stack.length) {
+      const key = stack.pop()
+      if (found.has(key)) continue
+      found.add(key)
+      for (const next of adjacency.get(key)) if (!found.has(next)) stack.push(next)
+    }
+    for (const key of found) active.delete(key)
+    const size = found.size
+    let internal = 0
+    let boundary = 0
+    let degreeTwo = true
+    for (const key of found) {
+      internal += [...adjacency.get(key)].filter(next => found.has(next)).length
+      boundary += exits.get(key)
+      if (4 - degrees[key] !== 2) degreeTwo = false
+    }
+    const kind = degreeTwo && internal / 2 === size && boundary === 0 ? 'loop' : 'chain'
+    parts.push([kind, size])
+  }
+  return parts.sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1])
+}
+
+function loonyEstimate(parts, memo) {
+  if (!parts.length) return 0
+  const key = parts.map(part => part.join(':')).join('|')
+  const cached = memo.get(key)
+  if (cached !== undefined) return cached
+  let best = -Infinity
+  for (let index = 0; index < parts.length; index++) {
+    const [kind, size] = parts[index]
+    const rest = parts.slice(0, index).concat(parts.slice(index + 1))
+    const future = loonyEstimate(rest, memo)
+    const responses = [-size - future]
+    if (kind === 'chain' && size >= 3) responses.push(4 - size + future)
+    if (kind === 'loop' && size >= 4) responses.push(8 - size + future)
+    best = Math.max(best, Math.min(...responses))
+  }
+  memo.set(key, best)
+  return best
+}
+
 function emptyEdgeSignature(state) {
   let signature = ''
   let byte = 0
@@ -300,6 +361,223 @@ function chooseCapture(state, player, captures) {
   return best || captures[0]
 }
 
+// ---------- 安全前沿：价值 1/2 等值开块局部 minimax ----------
+//
+// 只在多个“当前最小让分”候选同为 1 或 2 时启动。搜索在所有价值 1/2
+// 短块消失时停止，先比较最终控制方，再比较短块阶段分差。这样不会把宽
+// minimax 带回安全阶段，也不会影响价值 >= 3 的既有链/环策略。
+const SHORT_SEARCH_ABORT = Symbol('short-search-abort')
+
+function useShortBudget(context) {
+  context.nodes++
+  if (context.nodes > context.nodeLimit || Date.now() > context.deadline) throw SHORT_SEARCH_ABORT
+}
+
+function cappedShortCaptureCost(state, context) {
+  const key = emptyEdgeSignature(state)
+  const cached = context.costMemo.get(key)
+  if (cached !== undefined) return cached
+  useShortBudget(context)
+  const captures = []
+  for (const move of legalMoves(state)) {
+    const gain = immediateGainFast(state, moveKey(move))
+    if (gain > 0) captures.push({ move, gain })
+  }
+  if (!captures.length) {
+    context.costMemo.set(key, 0)
+    return 0
+  }
+  let best = 0
+  for (const candidate of captures) {
+    const sim = cloneState(state)
+    placeEdge(sim, candidate.move.dir, candidate.move.r, candidate.move.c, 0)
+    best = Math.max(best, Math.min(3, candidate.gain + cappedShortCaptureCost(sim, context)))
+    if (best >= 3) break
+  }
+  context.costMemo.set(key, best)
+  return best
+}
+
+function shortCaptureOutcomes(state, receiver, context) {
+  const key = emptyEdgeSignature(state)
+  const cached = context.captureMemo.get(key)
+  if (cached !== undefined) return cached
+  useShortBudget(context)
+  const value = cappedShortCaptureCost(state, context)
+  if (value === 0) {
+    const terminal = [state]
+    context.captureMemo.set(key, terminal)
+    return terminal
+  }
+  const terminals = new Map()
+  for (const move of legalMoves(state)) {
+    const gain = immediateGainFast(state, moveKey(move))
+    if (!gain) continue
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, receiver)
+    if (gain + cappedShortCaptureCost(sim, context) !== value) continue
+    for (const terminal of shortCaptureOutcomes(sim, receiver, context)) {
+      terminals.set(emptyEdgeSignature(terminal), terminal)
+    }
+  }
+  const result = [...terminals.values()]
+  context.captureMemo.set(key, result)
+  return result
+}
+
+function shortResultBetter(candidate, current, chooser) {
+  if (!current) return true
+  const candidateControls = candidate.controller === chooser
+  const currentControls = current.controller === chooser
+  if (candidateControls !== currentControls) return candidateControls
+  if (candidate.scoreDelta !== current.scoreDelta) {
+    return chooser === 0
+      ? candidate.scoreDelta > current.scoreDelta
+      : candidate.scoreDelta < current.scoreDelta
+  }
+  const candidateKey = candidate.move ? moveKey(candidate.move) : candidate.terminalKey
+  const currentKey = current.move ? moveKey(current.move) : current.terminalKey
+  return candidateKey < currentKey
+}
+
+function chooseShortResult(results, chooser) {
+  let best = null
+  for (const result of results) {
+    if (shortResultBetter(result, best, chooser)) best = result
+  }
+  return best
+}
+
+function solveShortPhase(state, player, controller, context) {
+  const signature = emptyEdgeSignature(state)
+  const key = `${signature}:${player}:${controller}`
+  const cached = context.searchMemo.get(key)
+  if (cached !== undefined) return cached
+  useShortBudget(context)
+  if (player === controller) controller = 1 - player
+
+  const candidates = []
+  for (const move of legalMoves(state)) {
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, player)
+    const value = cappedShortCaptureCost(sim, context)
+    if (value === 1 || value === 2) candidates.push({ move, state: sim, value })
+  }
+  if (!candidates.length) {
+    const terminal = { controller, scoreDelta: 0, shortCount: 0, move: null, terminalKey: signature }
+    context.searchMemo.set(key, terminal)
+    return terminal
+  }
+
+  const minimum = Math.min(...candidates.map(candidate => candidate.value))
+  const receiver = 1 - player
+  const scoreGain = receiver === 0 ? minimum : -minimum
+  const openingResults = []
+  for (const candidate of candidates) {
+    if (candidate.value !== minimum) continue
+    const captureResults = []
+    for (const terminal of shortCaptureOutcomes(candidate.state, receiver, context)) {
+      const continuation = solveShortPhase(terminal, receiver, controller, context)
+      captureResults.push({
+        controller: continuation.controller,
+        scoreDelta: scoreGain + continuation.scoreDelta,
+        shortCount: 1 + continuation.shortCount,
+        move: candidate.move,
+        terminalKey: continuation.terminalKey
+      })
+    }
+    openingResults.push(chooseShortResult(captureResults, receiver))
+  }
+  const result = chooseShortResult(openingResults, player)
+  context.searchMemo.set(key, result)
+  return result
+}
+
+function chooseEqualShortOpening(state, player, controller, moves, context) {
+  try {
+    const candidates = []
+    for (const move of moves) {
+      const sim = cloneState(state)
+      placeEdge(sim, move.dir, move.r, move.c, player)
+      candidates.push({ move, value: cappedShortCaptureCost(sim, context) })
+    }
+    const minimum = Math.min(...candidates.map(candidate => candidate.value))
+    const tied = candidates.filter(candidate => candidate.value === minimum)
+    if (!(minimum === 1 || minimum === 2) || tied.length < 2) return null
+    // 在开块边界，当前行动方是 opener，控制方是另一方。
+    return solveShortPhase(state, player, controller, context).move
+  } catch (error) {
+    if (error !== SHORT_SEARCH_ABORT) throw error
+    return null
+  }
+}
+
+function createL3Analysis() {
+  return {
+    nodes: 0,
+    nodeLimit: 300000,
+    deadline: Date.now() + 9500,
+    costMemo: new Map(),
+    captureMemo: new Map(),
+    searchMemo: new Map(),
+    forcedCostMemo: new Map(),
+    forcedProfilesMemo: new Map(),
+    controlPlanMemo: new Map(),
+    partsMemo: new Map(),
+    loonyMemo: new Map(),
+    forecastMemo: new Map()
+  }
+}
+
+function forcedCaptureCostExact(state, context) {
+  const key = emptyEdgeSignature(state)
+  const cached = context.forcedCostMemo.get(key)
+  if (cached !== undefined) return cached
+  useShortBudget(context)
+  const captures = legalMoves(state).filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  if (!captures.length) {
+    context.forcedCostMemo.set(key, 0)
+    return 0
+  }
+  let best = 0
+  for (const move of captures) {
+    const gain = immediateGainFast(state, moveKey(move))
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, 0)
+    best = Math.max(best, gain + forcedCaptureCostExact(sim, context))
+  }
+  context.forcedCostMemo.set(key, best)
+  return best
+}
+
+function forcedCaptureProfilesExact(state, receiver, context) {
+  const key = emptyEdgeSignature(state)
+  const cached = context.forcedProfilesMemo.get(key)
+  if (cached !== undefined) return cached
+  useShortBudget(context)
+  const captures = legalMoves(state).filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  if (!captures.length) {
+    const terminal = [{ state, gift: 0 }]
+    context.forcedProfilesMemo.set(key, terminal)
+    return terminal
+  }
+  const terminals = new Map()
+  for (const move of captures) {
+    const gain = immediateGainFast(state, moveKey(move))
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, receiver)
+    for (const child of forcedCaptureProfilesExact(sim, receiver, context)) {
+      const gift = gain + child.gift
+      const signature = emptyEdgeSignature(child.state)
+      const old = terminals.get(signature)
+      if (!old || gift > old.gift) terminals.set(signature, { state: child.state, gift })
+    }
+  }
+  const result = [...terminals.values()]
+  context.forcedProfilesMemo.set(key, result)
+  return result
+}
+
 // 严格识别 handout：模拟一条非得分边后，所有当前可吃格必须一起落入一个
 // 与其余棋盘隔离、无分叉、大小恰为 2（长链）或 4（环）的赠送块。
 function handoutMoves(state, moves, degrees) {
@@ -327,6 +605,107 @@ function handoutMoves(state, moves, degrees) {
   return result
 }
 
+function strictHandoutMovesFull(state, moves, receiver, context) {
+  const degrees = unclaimedDegrees(state)
+  const active = Object.keys(degrees).filter(key => degrees[key] === 3)
+  if (!active.length) return []
+  const remaining = Object.keys(degrees).length
+  const result = []
+  for (const move of moves) {
+    if (immediateGainFast(state, moveKey(move)) > 0) continue
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, 1 - receiver)
+    const quickGift = forcedCaptureCostExact(sim, context)
+    if (!(quickGift === 2 || quickGift === 4)) continue
+    const profiles = forcedCaptureProfilesExact(sim, receiver, context)
+    const gifts = new Set(profiles.map(profile => profile.gift))
+    if (gifts.size !== 1 || !gifts.has(quickGift) || quickGift === remaining) continue
+    let valid = true
+    for (const profile of profiles) {
+      const claimed = new Set(Object.keys(state.boxes).filter(key => state.boxes[key] === null && profile.state.boxes[key] !== null))
+      if (claimed.size !== quickGift || active.some(key => !claimed.has(key))) { valid = false; break }
+      const first = claimed.values().next().value
+      const seen = new Set()
+      const stack = [first]
+      while (stack.length) {
+        const key = stack.pop()
+        if (seen.has(key)) continue
+        seen.add(key)
+        for (const [id, adjacentBoxes] of Object.entries(EDGE_BOXES)) {
+          if (state.edges[id] !== null || adjacentBoxes.length !== 2) continue
+          const keys = adjacentBoxes.map(box => `${box.r}-${box.c}`)
+          if (!keys.includes(key)) continue
+          const other = keys[0] === key ? keys[1] : keys[0]
+          if (claimed.has(other) && !seen.has(other)) stack.push(other)
+        }
+      }
+      if (seen.size !== claimed.size) { valid = false; break }
+    }
+    if (valid) result.push({ move, gift: quickGift })
+  }
+  return result
+}
+
+function bestControlPlanFull(state, player, context) {
+  const key = `${emptyEdgeSignature(state)}:${player}`
+  if (context.controlPlanMemo.has(key)) return context.controlPlanMemo.get(key)
+  useShortBudget(context)
+  const moves = legalMoves(state)
+  const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  if (!captures.length) {
+    context.controlPlanMemo.set(key, null)
+    return null
+  }
+  const candidates = []
+  for (const handout of strictHandoutMovesFull(state, moves, 1 - player, context)) {
+    candidates.push({ move: handout.move, handout: true, take: 0, gift: handout.gift, utility: -handout.gift })
+  }
+  for (const move of captures) {
+    const gain = immediateGainFast(state, moveKey(move))
+    const sim = cloneState(state)
+    placeEdge(sim, move.dir, move.r, move.c, player)
+    const future = bestControlPlanFull(sim, player, context)
+    if (future) candidates.push({ move, handout: false, take: gain + future.take, gift: future.gift, utility: gain + future.utility })
+  }
+  if (!candidates.length) {
+    context.controlPlanMemo.set(key, null)
+    return null
+  }
+  candidates.sort((a, b) => b.utility - a.utility || a.gift - b.gift || b.take - a.take || moveKey(a.move).localeCompare(moveKey(b.move)))
+  const result = candidates[0]
+  context.controlPlanMemo.set(key, result)
+  return result
+}
+
+function openingForecastFull(state, move, receiver, context) {
+  const key = `${emptyEdgeSignature(state)}:${moveKey(move)}:${receiver}`
+  const cached = context.forecastMemo.get(key)
+  if (cached !== undefined) return cached
+  const sim = cloneState(state)
+  placeEdge(sim, move.dir, move.r, move.c, 1 - receiver)
+  const profiles = forcedCaptureProfilesExact(sim, receiver, context)
+  const gift = Math.max(...profiles.map(profile => profile.gift))
+  let receiverMargin = -Infinity
+  let residualUnits = 0
+  for (const profile of profiles) {
+    if (profile.gift !== gift) continue
+    const signature = emptyEdgeSignature(profile.state)
+    let parts = context.partsMemo.get(signature)
+    if (!parts) {
+      parts = residualLoonyParts(profile.state)
+      context.partsMemo.set(signature, parts)
+    }
+    const margin = profile.gift + loonyEstimate(parts, context.loonyMemo)
+    if (margin > receiverMargin) {
+      receiverMargin = margin
+      residualUnits = parts.length
+    }
+  }
+  const result = { gift, receiverMargin, residualUnits }
+  context.forecastMemo.set(key, result)
+  return result
+}
+
 function chooseStableRandom(state, moves) {
   const seed = stateHash(state)
   let best = moves[0]
@@ -341,29 +720,149 @@ function chooseStableRandom(state, moves) {
   return best
 }
 
-export function aiMoveLevel3(state, player) {
+function moveEndpoints(move) {
+  if (move.dir === 'H') return [`${move.r}-${move.c}`, `${move.r}-${move.c + 1}`]
+  return [`${move.r}-${move.c}`, `${move.r + 1}-${move.c}`]
+}
+
+function sharesEndpoint(a, b) {
+  const endpoints = new Set(moveEndpoints(a))
+  return moveEndpoints(b).some(point => endpoints.has(point))
+}
+
+// 安全边不再完全随机：优先贴住对方上一手的端点；没有上一手上下文时，
+// 优先贴住棋盘上已有的对方边。等价候选才使用确定性哈希打散。
+function chooseStrategicSafe(state, moves, player, lastMove) {
+  let candidates = moves
+  if (lastMove && lastMove.player !== player) {
+    const adjacentToLast = moves.filter(move => sharesEndpoint(move, lastMove))
+    if (adjacentToLast.length) candidates = adjacentToLast
+  }
+  if (candidates === moves) {
+    const opponentEdges = []
+    for (const [id, owner] of Object.entries(state.edges)) {
+      if (owner !== 1 - player) continue
+      const [dir, r, c] = id.split('-')
+      opponentEdges.push({ dir, r: Number(r), c: Number(c) })
+    }
+    let bestContact = -1
+    const ranked = []
+    for (const move of moves) {
+      let contact = 0
+      for (const opponentMove of opponentEdges) {
+        if (sharesEndpoint(move, opponentMove)) contact++
+      }
+      if (contact > bestContact) {
+        bestContact = contact
+        ranked.length = 0
+        ranked.push(move)
+      } else if (contact === bestContact) {
+        ranked.push(move)
+      }
+    }
+    if (ranked.length) candidates = ranked
+  }
+  return chooseStableRandom(state, candidates)
+}
+
+function rankLess(candidate, current) {
+  if (!current) return true
+  for (let index = 0; index < candidate.length; index++) {
+    if (candidate[index] !== current[index]) return candidate[index] < current[index]
+  }
+  return false
+}
+
+export function aiMoveLevel3(state, player, lastMove = null, controlOwner = null) {
   const moves = legalMoves(state)
   if (!moves.length) return null
+  const analysis = createL3Analysis()
 
-  // 1) 吃格阶段先寻找双十字。大师 AI 允许主动弃吃以保留控制权。
   const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
+  let controller = controlOwner === 0 || controlOwner === 1 ? controlOwner : player
+  // 控制方没有可吃格却必须开块时，主动权在落子前已经转给另一方。
+  if (player === controller && !captures.length) controller = 1 - player
+  const hasControl = player === controller
+
+  // 1) 有安全边时先取得免费分；安全边耗尽后，控制方寻找严格日字，
+  // 无权方则先接完对方的赠送。
   if (captures.length) {
-    const degrees = unclaimedDegrees(state)
-    const handouts = handoutMoves(state, moves, degrees)
-    if (handouts.length) {
-      const smallestGift = Math.min(...handouts.map(item => item.gift))
-      return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+    if (safe.length) return chooseCapture(state, player, captures)
+    if (hasControl) {
+      try {
+        const plan = bestControlPlanFull(state, player, analysis)
+        if (plan) return plan.move
+      } catch (error) {
+        if (error !== SHORT_SEARCH_ABORT) throw error
+      }
+      // 预算耗尽时保留原有的严格结构 handout 作为安全回退。
+      const degrees = unclaimedDegrees(state)
+      const handouts = handoutMoves(state, moves, degrees)
+      if (handouts.length) {
+        const smallestGift = Math.min(...handouts.map(item => item.gift))
+        return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+      }
     }
     return chooseCapture(state, player, captures)
   }
 
-  // 2) 安全阶段：绝不主动制造三边格。等价安全边使用局面哈希确定性分散。
-  const safe = moves.filter(move => moveDanger(state, move.dir, move.r, move.c, player) === 0)
-  if (safe.length) return chooseStableRandom(state, safe)
+  // 2) 安全阶段：绝不主动制造三边格；优先接在对方上一手的端点附近。
+  if (safe.length) return chooseStrategicSafe(state, safe, player, lastMove)
 
-  // 3) 安全前沿：打开最小残余区块，且尽量只制造一个三边格。
+  // 3) 安全前沿：先用短块 minimax 抢最终奇偶；其余局面按有权/无权
+  // 两套开块策略分别估值。任一深层分析超出 10 秒预算即回退旧结构排序。
+  const shortMove = chooseEqualShortOpening(state, player, controller, moves, analysis)
+  if (shortMove) return shortMove
   const degrees = unclaimedDegrees(state)
   const components = residualComponents(state, degrees)
+  try {
+    if (!hasControl) {
+      const rows = []
+      for (const move of moves) {
+        const sim = cloneState(state)
+        placeEdge(sim, move.dir, move.r, move.c, player)
+        rows.push({ move, openingValue: forcedCaptureCostExact(sim, analysis), state: sim })
+      }
+      const minimum = Math.min(...rows.map(row => row.openingValue))
+      let best = null
+      let bestRank = null
+      for (const row of rows) {
+        if (row.openingValue !== minimum) continue
+        const plan = bestControlPlanFull(row.state, 1 - player, analysis)
+        const controlBreak = plan ? 0 : 1
+        const controllerUtility = plan ? plan.utility : row.openingValue
+        const giftBack = plan ? plan.gift : 0
+        const pressure = controllerUtility - (controlBreak ? 8 : 0)
+        const rank = [pressure, -giftBack, controllerUtility, moveKey(row.move)]
+        if (rankLess(rank, bestRank)) { best = row.move; bestRank = rank }
+      }
+      if (best) return best
+    } else {
+      const rows = []
+      for (const move of moves) {
+        const sim = cloneState(state)
+        placeEdge(sim, move.dir, move.r, move.c, player)
+        rows.push({ move, gift: forcedCaptureCostExact(sim, analysis) })
+      }
+      const minimum = Math.min(...rows.map(row => row.gift))
+      let best = null
+      let bestRank = null
+      for (const row of rows) {
+        if (row.gift !== minimum) continue
+        const forecast = openingForecastFull(state, row.move, 1 - player, analysis)
+        const size = componentSizeForMove(row.move, components)
+        const danger = moveDanger(state, row.move.dir, row.move.r, row.move.c, player)
+        const rank = [forecast.receiverMargin, forecast.residualUnits, size, danger, moveKey(row.move)]
+        if (rankLess(rank, bestRank)) { best = row.move; bestRank = rank }
+      }
+      if (best) return best
+    }
+  } catch (error) {
+    if (error !== SHORT_SEARCH_ABORT) throw error
+  }
+
+  // 最坏情况下的低成本确定性回退。
   const seed = stateHash(state)
   let best = null
   let bestRank = null
@@ -383,9 +882,24 @@ export function aiMoveLevel3(state, player) {
   return best
 }
 
-export function getAiMove(level, state, player) {
+// 游戏层在落子前调用，用于维护策略所需的“主动权归属”。它不修改 state。
+export function l3ControlAfterMove(state, move, player, controlOwner = null) {
+  const moves = legalMoves(state)
+  const captures = moves.filter(candidate => immediateGainFast(state, moveKey(candidate)) > 0)
+  let controller = controlOwner === 0 || controlOwner === 1 ? controlOwner : player
+  if (player === controller && !captures.length) controller = 1 - player
+  if (immediateGainFast(state, moveKey(move)) > 0) return controller
+  if (captures.length) {
+    const degrees = unclaimedDegrees(state)
+    const handout = handoutMoves(state, moves, degrees).some(candidate => moveKey(candidate.move) === moveKey(move))
+    if (handout) return player
+  }
+  return 1 - player
+}
+
+export function getAiMove(level, state, player, lastMove = null, controlOwner = null) {
   if (level === 1) return aiMoveLevel1(state, player)
-  if (level === 3) return aiMoveLevel3(state, player)
+  if (level === 3) return aiMoveLevel3(state, player, lastMove, controlOwner)
   return aiMoveLevel2(state, player)
 }
 
