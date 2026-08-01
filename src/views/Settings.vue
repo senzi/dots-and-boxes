@@ -1,10 +1,10 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useSettingsStore } from '../stores/settings.js'
 import { AI_LEVELS } from '../engine/ai.js'
+import AvatarNamePicker from '../components/AvatarNamePicker.vue'
 
 const settings = useSettingsStore()
-const AVATARS = ['🐱', '🦊', '🐼', '🐸', '🐙', '🦉', '🐯', '🐰', '🦄', '🐻', '🐧', '🦖']
 
 const saved = ref(false)
 function save() {
@@ -22,42 +22,36 @@ function save() {
     <!-- 玩家 1 默认 -->
     <div class="card-soft mt-24">
       <div class="caption">玩家 1 默认</div>
-      <input v-model="settings.defaultName1" class="input mt-16" maxlength="10" placeholder="默认昵称" />
-      <div class="avatar-row mt-16">
-        <button
-          v-for="a in AVATARS" :key="a"
-          class="avatar-opt" :class="{ on: settings.defaultAvatar1 === a }"
-          @click="settings.defaultAvatar1 = a"
-        >{{ a }}</button>
+      <div class="mt-16">
+        <AvatarNamePicker
+          v-model:avatar="settings.defaultAvatar1"
+          v-model:name="settings.defaultName1"
+          placeholder="默认昵称"
+        />
       </div>
     </div>
 
     <!-- 玩家 2 默认 -->
     <div class="card-soft mt-24">
       <div class="caption">玩家 2 默认</div>
-      <input v-model="settings.defaultName2" class="input mt-16" maxlength="10" placeholder="默认昵称" />
-      <div class="avatar-row mt-16">
-        <button
-          v-for="a in AVATARS" :key="a"
-          class="avatar-opt" :class="{ on: settings.defaultAvatar2 === a }"
-          @click="settings.defaultAvatar2 = a"
-        >{{ a }}</button>
+      <div class="mt-16">
+        <AvatarNamePicker
+          v-model:avatar="settings.defaultAvatar2"
+          v-model:name="settings.defaultName2"
+          placeholder="默认昵称"
+        />
       </div>
     </div>
 
     <!-- AI 默认 -->
     <div class="card-soft mt-24">
       <div class="caption">AI 默认</div>
-      <div class="row gap-16 mt-16">
-        <input v-model="settings.defaultAiName" class="input" maxlength="10" placeholder="AI 昵称" />
-        <div class="avatar" style="flex-shrink: 0">{{ settings.defaultAiAvatar }}</div>
-      </div>
-      <div class="avatar-row mt-16">
-        <button
-          v-for="a in AVATARS" :key="a"
-          class="avatar-opt" :class="{ on: settings.defaultAiAvatar === a }"
-          @click="settings.defaultAiAvatar = a"
-        >{{ a }}</button>
+      <div class="mt-16">
+        <AvatarNamePicker
+          v-model:avatar="settings.defaultAiAvatar"
+          v-model:name="settings.defaultAiName"
+          placeholder="AI 昵称"
+        />
       </div>
       <div class="caption mt-24">AI 默认难度</div>
       <div class="row gap-12 mt-16" style="flex-wrap: wrap">
@@ -77,17 +71,4 @@ function save() {
 </template>
 
 <style scoped>
-.avatar-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.avatar-opt {
-  border: 1px solid var(--hairline);
-  background: var(--canvas-soft);
-  border-radius: 12px;
-  font-size: 20px;
-  padding: 6px 8px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  line-height: 1;
-}
-.avatar-opt:hover { border-color: var(--ink); }
-.avatar-opt.on { border-color: var(--ink); background: var(--ink); }
 </style>

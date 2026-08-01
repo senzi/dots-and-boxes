@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { MODES, useGameStore } from '../stores/game.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { AI_LEVELS } from '../engine/ai.js'
+import AvatarNamePicker from '../components/AvatarNamePicker.vue'
 
 const router = useRouter()
 const game = useGameStore()
@@ -14,14 +15,7 @@ const aiLevel = ref(settings.defaultAiLevel)
 const p1 = ref({ name: settings.defaultName1, avatar: settings.defaultAvatar1 })
 const p2 = ref({ name: settings.defaultName2, avatar: settings.defaultAvatar2 })
 
-const AVATARS = ['🐱', '🦊', '🐼', '🐸', '🐙', '🦉', '🐯', '🐰', '🦄', '🐻', '🐧', '🦖']
-
 const isAi = computed(() => mode.value === 'ai')
-
-function pickAvatar(target, emoji) {
-  if (target === 'p1') p1.value.avatar = emoji
-  else p2.value.avatar = emoji
-}
 
 function start() {
   let players
@@ -87,33 +81,22 @@ function start() {
         <div class="card-soft player-card">
           <div class="row gap-16">
             <div class="avatar big">{{ p1.avatar }}</div>
-            <input v-model="p1.name" class="input" maxlength="10" :placeholder="'玩家 1' + (isAi ? '（你）' : '')" />
+            <span class="body-sm muted">点头像换名，或自己输入</span>
           </div>
-          <div class="avatar-row mt-16">
-            <button
-              v-for="a in AVATARS" :key="a"
-              class="avatar-opt" :class="{ on: p1.avatar === a }"
-              @click="pickAvatar('p1', a)"
-            >{{ a }}</button>
+          <div class="mt-16">
+            <AvatarNamePicker v-model:avatar="p1.avatar" v-model:name="p1.name" placeholder="玩家 1 昵称" />
           </div>
         </div>
 
         <div class="card-soft player-card">
           <div class="row gap-16">
             <div class="avatar big">{{ isAi ? settings.defaultAiAvatar : p2.avatar }}</div>
-            <input
-              v-if="!isAi" v-model="p2.name" class="input" maxlength="10" placeholder="玩家 2"
-            />
-            <input v-else class="input" :value="settings.defaultAiName" disabled />
+            <span v-if="!isAi" class="body-sm muted">点头像换名，或自己输入</span>
+            <span v-else class="body-sm muted">对手由 AI 扮演，可在设置中修改。</span>
           </div>
-          <div v-if="!isAi" class="avatar-row mt-16">
-            <button
-              v-for="a in AVATARS" :key="a"
-              class="avatar-opt" :class="{ on: p2.avatar === a }"
-              @click="pickAvatar('p2', a)"
-            >{{ a }}</button>
+          <div v-if="!isAi" class="mt-16">
+            <AvatarNamePicker v-model:avatar="p2.avatar" v-model:name="p2.name" placeholder="玩家 2 昵称" />
           </div>
-          <div v-else class="body-sm muted mt-16">对手由 AI 扮演，可在设置中修改。</div>
         </div>
       </div>
     </div>
@@ -139,19 +122,6 @@ function start() {
   gap: 16px;
 }
 .avatar.big { width: 52px; height: 52px; font-size: 26px; }
-.avatar-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.avatar-opt {
-  border: 1px solid var(--hairline);
-  background: var(--canvas-soft);
-  border-radius: 12px;
-  font-size: 20px;
-  padding: 6px 8px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  line-height: 1;
-}
-.avatar-opt:hover { border-color: var(--ink); }
-.avatar-opt.on { border-color: var(--ink); background: var(--ink); }
 
 @media (max-width: 640px) {
   .hero { padding-top: 16px; }
