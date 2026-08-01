@@ -87,7 +87,7 @@ onMounted(() => {
     </div>
 
     <!-- 面对面：左右玩家 + 中央棋盘 -->
-    <div v-if="isFace" class="face-layout">
+    <div v-if="game.board && isFace" class="face-layout">
       <div class="side-panel" :class="{ active: !game.over && game.current === 0 }">
         <PlayerCard :player="game.players[0]" :score="scores[0]" :active="!game.over && game.current === 0" :turn="!game.over && game.current === 0" />
       </div>
@@ -101,7 +101,7 @@ onMounted(() => {
     </div>
 
     <!-- 热座 / AI：上方玩家条 + 中央棋盘 -->
-    <div v-else class="stack-layout">
+    <div v-else-if="game.board" class="stack-layout">
       <div class="players-bar">
         <PlayerCard
           :player="game.players[0]" :score="scores[0]"

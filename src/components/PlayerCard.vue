@@ -10,7 +10,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="player-card" :class="{ on: active }">
+  <div v-if="player" class="player-card" :class="{ on: active }">
     <div class="avatar" :class="turn ? 'turn-glow' : ''">{{ player.avatar }}</div>
     <div class="col flex-1" style="min-width: 0">
       <div class="row gap-8">
