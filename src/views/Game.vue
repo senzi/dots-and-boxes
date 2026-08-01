@@ -49,6 +49,7 @@ watch(() => game.over, (v) => {
     history.add({
       date: Date.now(),
       mode,
+      boardSize: game.size,
       aiLevel: game.mode === 'ai' ? game.aiLevel : null,
       players: game.players.map((p, i) => ({ ...p, score: i === 0 ? a : b })),
       result: game.winner === -1 ? 'draw' : 'win',
@@ -92,7 +93,7 @@ onMounted(() => {
         <PlayerCard :player="game.players[0]" :score="scores[0]" :active="!game.over && game.current === 0" :turn="!game.over && game.current === 0" />
       </div>
       <div class="board-wrap">
-        <Board :board="game.board" :players="game.players" :disabled="game.over || game.aiThinking" @place="onPlace" />
+        <Board :board="game.board" :players="game.players" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking" @place="onPlace" />
         <div v-if="toast" class="toast">{{ toast }}</div>
       </div>
       <div class="side-panel rot180" :class="{ active: !game.over && game.current === 1 }">
@@ -118,7 +119,7 @@ onMounted(() => {
         />
       </div>
       <div class="board-wrap">
-        <Board :board="game.board" :players="game.players" :disabled="game.over || game.aiThinking || game.isAiTurn" @place="onPlace" />
+        <Board :board="game.board" :players="game.players" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking || game.isAiTurn" @place="onPlace" />
         <div v-if="toast" class="toast">{{ toast }}</div>
       </div>
     </div>
@@ -136,7 +137,7 @@ onMounted(() => {
           <div class="muted score-sep">:</div>
           <div class="score-num" :style="{ color: 'var(--p2)' }">{{ scores[1] }}</div>
         </div>
-        <p class="body-sm muted mt-8">共 {{ game.players[0].name }} {{ scores[0] }} 格 · {{ game.players[1].name }} {{ scores[1] }} 格 · 63 格制</p>
+        <p class="body-sm muted mt-8">共 {{ game.players[0].name }} {{ scores[0] }} 格 · {{ game.players[1].name }} {{ scores[1] }} 格 · {{ game.boardLabel }}</p>
         <div class="row gap-12 mt-24">
           <button class="btn btn-primary btn-lg flex-1" @click="again">再来一局</button>
           <button class="btn btn-outline btn-lg" @click="goHome">返回首页</button>

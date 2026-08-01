@@ -1,7 +1,7 @@
 // 引擎自测 —— node scripts/self-test.mjs
 import {
   createBoard, placeEdge, isGameOver, scores, legalMoves,
-  remainingEdges, boxEdges, TOTAL_BOXES
+  remainingEdges, boxEdges, totalBoxes, setBoardSize, gridSize
 } from '../src/engine/board.js'
 import { getAiMove } from '../src/engine/ai.js'
 
@@ -11,7 +11,8 @@ function check(name, cond) {
   else { fail++; console.log(`  ✗ ${name}`) }
 }
 
-console.log('— 棋盘结构 —')
+console.log('— 棋盘结构（8×8） —')
+setBoardSize('s8')
 const b = createBoard()
 check(`总边数 142（实际 ${Object.keys(b.edges).length}）`, Object.keys(b.edges).length === 142)
 check(`可得分格子 63（实际 ${Object.keys(b.boxes).length}）`, Object.keys(b.boxes).length === 63)
@@ -46,7 +47,7 @@ console.log('— 不可用边拒绝 —')
 const res2 = placeEdge(b2, 'H', 0, 0, 0)
 check(`H(0,0) 被拒`, !res2.ok)
 
-console.log('— 完整对局（AI 模拟） —')
+console.log('— 完整对局（AI 模拟，8×8） —')
 for (const level of [1, 2, 3]) {
   const st = createBoard()
   let p = 0, steps = 0
@@ -57,8 +58,33 @@ for (const level of [1, 2, 3]) {
     steps++
   }
   const [a, bb] = scores(st)
-  check(`L${level} 对局结束（${steps} 步，${a}:${bb}，格子 ${a + bb}/63）`, isGameOver(st) && a + bb === 63)
+  check(`L${level} 对局结束（${steps} 步，${a}:${bb}，格子 ${a + bb}/63）`, isGameOver(st) && a + bb === totalBoxes())
 }
 
+console.log('— 棋盘结构（6×6） —')
+setBoardSize('s6')
+const b6 = createBoard()
+check(`gridSize=6（实际 ${gridSize()}）`, gridSize() === 6)
+check(`总边数 82（实际 ${Object.keys(b6.edges).length}）`, Object.keys(b6.edges).length === 82)
+check(`可得分格子 35（实际 ${Object.keys(b6.boxes).length}）`, Object.keys(b6.boxes).length === 35)
+check(`移除角点 H(0,0) 不可用`, !('H-0-0' in b6.edges))
+check(`移除角点 V(0,0) 不可用`, !('V-0-0' in b6.edges))
+check(`边界边 V(5,0) 可用`, 'V-5-0' in b6.edges)
+
+console.log('— 完整对局（AI 模拟，6×6） —')
+for (const level of [1, 2, 3]) {
+  const st = createBoard()
+  let p = 0, steps = 0
+  while (!isGameOver(st) && steps < 500) {
+    const m = getAiMove(level, st, p)
+    const r = placeEdge(st, m.dir, m.r, m.c, p)
+    if (r.gained === 0) p = 1 - p
+    steps++
+  }
+  const [a, bb] = scores(st)
+  check(`L${level} 对局结束（${steps} 步，${a}:${bb}，格子 ${a + bb}/35）`, isGameOver(st) && a + bb === totalBoxes())
+}
+
+setBoardSize('s8')
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 process.exit(fail ? 1 : 0)

@@ -1,7 +1,8 @@
 // 对局状态
 import { defineStore } from 'pinia'
 import {
-  createBoard, placeEdge, isGameOver, scores, remainingEdges, legalMoves
+  createBoard, placeEdge, isGameOver, scores, remainingEdges, legalMoves,
+  setBoardSize, SIZES, DEFAULT_SIZE, gridSize
 } from '../engine/board.js'
 import { getAiMove, aiMoveDelay } from '../engine/ai.js'
 
@@ -19,6 +20,7 @@ export const useGameStore = defineStore('game', {
   state: () => ({
     mode: null,          // 'face' | 'hotseat' | 'ai'
     aiLevel: 1,
+    size: DEFAULT_SIZE,  // 棋盘尺寸 id（'s8' | 's6'）
     players: [],         // [{id,name,avatar}]
     board: null,         // {edges, boxes}
     current: 0,          // 当前行动玩家 index
@@ -34,13 +36,23 @@ export const useGameStore = defineStore('game', {
     scores: (s) => s.board ? scores(s.board) : [0, 0],
     remEdges: (s) => s.board ? remainingEdges(s.board) : 0,
     currentPlayer: (s) => s.players[s.current] || null,
-    isAiTurn: (s) => s.mode === 'ai' && s.current === 1 && !s.over
+    isAiTurn: (s) => s.mode === 'ai' && s.current === 1 && !s.over,
+    boardGrid: (s) => {
+      const found = SIZES.find(x => x.id === s.size)
+      return found ? found.grid : gridSize()
+    },
+    boardLabel: (s) => {
+      const found = SIZES.find(x => x.id === s.size)
+      return found ? found.label : '8×8 · 63 格'
+    }
   },
 
   actions: {
-    start(mode, players, aiLevel = 1) {
+    start(mode, players, aiLevel = 1, size = DEFAULT_SIZE) {
       this.mode = mode
       this.aiLevel = aiLevel
+      this.size = size
+      setBoardSize(size)          // 切换引擎尺寸 + 重建查表
       this.players = players
       this.board = createBoard()
       this.current = 0
@@ -113,7 +125,7 @@ export const useGameStore = defineStore('game', {
     },
 
     reset() {
-      this.start(this.mode, this.players, this.aiLevel)
+      this.start(this.mode, this.players, this.aiLevel, this.size)
     }
   }
 })

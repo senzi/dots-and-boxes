@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { MODES, useGameStore } from '../stores/game.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { AI_LEVELS } from '../engine/ai.js'
+import { SIZES, DEFAULT_SIZE } from '../engine/board.js'
 import AvatarNamePicker from '../components/AvatarNamePicker.vue'
 
 const router = useRouter()
@@ -12,6 +13,7 @@ const settings = useSettingsStore()
 
 const mode = ref('face')
 const aiLevel = ref(settings.defaultAiLevel)
+const size = ref(DEFAULT_SIZE)
 const p1 = ref({ name: settings.defaultName1, avatar: settings.defaultAvatar1 })
 const p2 = ref({ name: settings.defaultName2, avatar: settings.defaultAvatar2 })
 
@@ -30,7 +32,7 @@ function start() {
       { id: 'p2', name: p2.value.name.trim() || '玩家 2', avatar: p2.value.avatar }
     ]
   }
-  game.start(mode.value, players, mode.value === 'ai' ? aiLevel.value : 1)
+  game.start(mode.value, players, mode.value === 'ai' ? aiLevel.value : 1, size.value)
   router.push('/game')
 }
 </script>
@@ -58,6 +60,19 @@ function start() {
           <span class="display-sm">{{ m.label }}</span>
           <span class="body-sm muted">{{ m.desc }}</span>
         </button>
+      </div>
+    </div>
+
+    <!-- 棋盘尺寸 -->
+    <div class="mt-24">
+      <div class="caption">棋盘尺寸</div>
+      <div class="row gap-12 mt-16">
+        <button
+          v-for="s in SIZES" :key="s.id"
+          class="level-pill"
+          :class="{ active: size === s.id }"
+          @click="size = s.id"
+        >{{ s.label }}</button>
       </div>
     </div>
 

@@ -1,19 +1,23 @@
 <script setup>
-// SVG 棋盘 —— 9×9 点阵，去掉左上角点，142 条边，63 格
+// SVG 棋盘 —— (grid+1)×(grid+1) 点阵，去掉左上角点
 import { computed } from 'vue'
-import { PTS, GRID, edgeId, isEdgeUsable } from '../engine/board.js'
+import { edgeId, isEdgeUsable } from '../engine/board.js'
 
 const props = defineProps({
   board: { type: Object, required: true },   // {edges, boxes}
   players: { type: Array, default: () => [] }, // [{avatar}]
   interactive: { type: Boolean, default: true },
-  disabled: { type: Boolean, default: false }
+  disabled: { type: Boolean, default: false },
+  gridSize: { type: Number, default: 8 }      // 方格数（8 或 6）
 })
 const emit = defineEmits(['place'])
 
+const G = computed(() => props.gridSize)      // 方格数
+const P = computed(() => props.gridSize + 1)  // 点数
+
 const M = 34      // margin
 const CELL = 64   // 点间距
-const SIZE = M * 2 + (PTS - 1) * CELL  // 34*2 + 8*64 = 580
+const SIZE = computed(() => M * 2 + (P.value - 1) * CELL)
 
 const px = (c) => M + c * CELL
 const py = (r) => M + r * CELL
@@ -21,8 +25,8 @@ const py = (r) => M + r * CELL
 // 水平边 H(r,c)：点(r,c) → 点(r,c+1)
 const hEdges = computed(() => {
   const list = []
-  for (let r = 0; r < PTS; r++) {
-    for (let c = 0; c < GRID; c++) {
+  for (let r = 0; r < P.value; r++) {
+    for (let c = 0; c < G.value; c++) {
       if (!isEdgeUsable('H', r, c)) continue
       list.push({ id: edgeId('H', r, c), r, c, x1: px(c), y1: py(r), x2: px(c + 1), y2: py(r) })
     }
@@ -32,8 +36,8 @@ const hEdges = computed(() => {
 // 垂直边 V(r,c)：点(r,c) → 点(r+1,c)
 const vEdges = computed(() => {
   const list = []
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < PTS; c++) {
+  for (let r = 0; r < G.value; r++) {
+    for (let c = 0; c < P.value; c++) {
       if (!isEdgeUsable('V', r, c)) continue
       list.push({ id: edgeId('V', r, c), r, c, x1: px(c), y1: py(r), x2: px(c), y2: py(r + 1) })
     }
@@ -46,8 +50,8 @@ const allEdges = computed(() => [...hEdges.value, ...vEdges.value])
 // 完成的格子
 const boxes = computed(() => {
   const list = []
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < GRID; c++) {
+  for (let r = 0; r < G.value; r++) {
+    for (let c = 0; c < G.value; c++) {
       if (r === 0 && c === 0) continue
       const owner = props.board.boxes[`${r}-${c}`]
       if (owner !== null && owner !== undefined) {
@@ -64,8 +68,8 @@ const removedDot = { x: px(0), y: py(0) }
 // 点阵（不含被移除角点）
 const dots = computed(() => {
   const list = []
-  for (let r = 0; r < PTS; r++) {
-    for (let c = 0; c < PTS; c++) {
+  for (let r = 0; r < P.value; r++) {
+    for (let c = 0; c < P.value; c++) {
       if (r === 0 && c === 0) continue
       list.push({ r, c, x: px(c), y: py(r) })
     }
