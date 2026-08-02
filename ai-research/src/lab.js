@@ -68,7 +68,9 @@
     $('twoParity').textContent = `${twos}（${twos % 2 ? '奇' : '偶'}）`
     $('handouts').textContent = `${blocks.filter(b=>b.handout===2).length} / ${blocks.filter(b=>b.handout===4).length} / ${blocks.filter(b=>b.handout===0).length}`
     $('progress').textContent = state.complete ? `${step}/${state.blocks.length} · 完成` : `${step}/${state.blocks.length} · 按需`
-    $('blockList').innerHTML = state.blocks.length ? state.blocks.map((block, index) => `<div class="block-row ${index === step - 1 ? 'active' : ''}"><b>${block.label}</b><span>值 ${block.value}</span><span>让 ${block.handout}</span><span>${block.short ? '<i class="badge short">短块</i>' : '<i class="badge">普通块</i>'} ${block.controlLabel}</span></div>`).join('') : '<p>点击“分析下一块”。</p>'
+    // 全盘价值轨迹：倒序（最新在最上），并随回撤步数缩短
+    const trail = blocks.slice().reverse()
+    $('blockList').innerHTML = trail.length ? trail.map((block, index) => `<div class="block-row ${index === 0 ? 'active' : ''}"><b>${block.label}</b><span>值 ${block.value}</span><span>让 ${block.handout}</span><span>${block.short ? '<i class="badge short">短块</i>' : '<i class="badge">普通块</i>'} ${block.controlLabel}</span></div>`).join('') : '<p>点击“分析下一块”。</p>'
     if (!current) $('current').innerHTML = `安全前沿已填 ${Board.bitCount(state.frontier)} 条边。<br>下一步将枚举所有开边，选择完整吃取价值最小的区块。`
     else $('current').innerHTML = `<b>块 ${current.label} · 价值 ${current.value}</b><br>开边：${Board.edgeText(current.openingEdge)}<br>自动吃：${current.captureMoves.length} 手；格子：${current.boxes.map(box=>Board.boxes[box].label).join('、')}<br>对战留法：让 <b>${current.handout}</b>，控制方净吃 ${current.controlTake}<br><span style="color:var(--gold)">${current.controlLabel}</span><br>同值最小块=${current.equivalentMinimumBlocks}；留法搜索=${current.handoutExact?'精确':'达到节点上限'} / ${current.searchNodes} 节点；${current.computeMs} ms`
   }
