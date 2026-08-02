@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>D63V1 协议检查器</title><link rel="stylesheet" href="src/styles.css"></head>
+<body><main class="app" style="max-width:980px">
+  <header><div><h1>D63V1 协议检查器</h1><p>独立重算价值块开块序列；不读取实验室内存状态。</p></div><div class="links"><a href="index.html">目录</a><a href="value-lab.html">价值实验室</a></div></header>
+  <section class="panel">
+    <textarea id="input" placeholder="粘贴 D63V1... 或 D63 VALUE DEBUG v1 全文"></textarea>
+    <div class="row" style="margin-top:7px"><button id="inspect" class="primary">解析并重算</button><button id="clear">清空</button></div>
+    <div id="status" class="status"></div>
+  </section>
+  <section class="panel" style="margin-top:8px"><h2>复算结果</h2><pre id="output" style="white-space:pre-wrap;color:var(--text)">尚未输入。</pre></section>
+</main>
+<script src="src/board.js"></script><script src="src/frontier.js"></script><script src="src/value-bot.js"></script><script src="src/protocol.js"></script>
+<script>
+(function(){
+  const input=document.getElementById('input'),output=document.getElementById('output'),status=document.getElementById('status')
+  function extract(text){const match=text.match(/(?:protocol=)?(D63V1\.[a-z0-9]+\.[a-z0-9]+\.[a-z0-9]+\.(?:_|[a-z0-9-]+))/i);if(!match)throw new Error('没有找到 D63V1 回放码');return match[1]}
+  document.getElementById('inspect').onclick=()=>{try{const decoded=D63.Protocol.decodeValueCode(extract(input.value)),valid=D63.Frontier.validate(decoded.frontier);if(!valid.ok)throw new Error(valid.error);const state=D63.ValueBot.create(decoded.frontier),rows=[];for(let i=0;i<decoded.step;i++){const block=D63.ValueBot.next(state);const expected=decoded.openings[i],ok=block.openingEdge===expected;rows.push(`${i+1}. 块${block.label} 值=${block.value} 让=${block.handout} 开边=${D63.Board.edges[block.openingEdge].id} ${ok?'✓':'✗ 协议='+D63.Board.edges[expected].id}`)}const allOk=rows.every(row=>row.includes('✓'));output.textContent=[`frontier=${D63.Protocol.frontierCode(decoded.frontier)}`,`seed=${decoded.seed}`,`steps=${decoded.step}`,`result=${allOk?'PASS':'MISMATCH'}`,...rows].join('\n');status.textContent=allOk?'协议与当前算法一致。':'发现开块序列不一致：算法版本或规则已经变化。'}catch(error){status.textContent=error.message;output.textContent='解析失败。'}}
+  document.getElementById('clear').onclick=()=>{input.value='';output.textContent='尚未输入。';status.textContent=''}
+})()
+</script></body></html>

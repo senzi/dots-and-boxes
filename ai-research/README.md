@@ -1,20 +1,31 @@
-# AI 算法研究
+# D63 价值块分析交付包
 
-Dots and Boxes 63 的 AI 算法研究目录。
+这是一个完全本地、无构建步骤的 8×8 缺左上角 Dots and Boxes 价值分析工具。
 
-## 用途
+## 入口
 
-- L3 大师 AI 的博弈理论调研（Loony 端局理论、链/环结构、主动权控制）
-- 算法实验笔记、伪代码、参考论文摘录
-- 与算法专家的对接材料
+- `index.html`：目录页。
+- `value-lab.html`：价值块分析实验室。
+- `protocol-inspector.html`：D63V1 协议独立复算页。
 
-## 相关文档
+直接双击 HTML 即可使用。页面只加载本目录内的 CSS/JavaScript，不访问网络。
 
-- 接口规范：`docs/AI-L3-INTERFACE.md`
-- 设计说明：`docs/AI-L3-DESIGN.md`
-- 当前实现：`src/engine/ai.js`（L3 = `aiMoveLevel3`）
-- 验证：`npm run test:engine` / `npm run test:l3` / `npm run benchmark:l3`
+## 验证
 
-## 研究笔记
+在本目录运行：
 
-（待补充）
+```powershell
+node tools/verify.mjs
+node tools/inspect-protocol.mjs "D63V1...."
+```
+
+## 阅读顺序
+
+接手调试的模型先阅读：
+
+1. `docs/HANDOFF.md`
+2. `docs/ALGORITHM.md`
+3. `docs/PROTOCOL.md`
+4. `src/value-bot.js`
+
+当前版本只负责稳定识别价值块和控制事件，不宣称已经能够判断整盘胜负。

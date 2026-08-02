@@ -1,0 +1,18 @@
+D63 VALUE DEBUG v1
+protocol=D63V1.1s9cwvrwna300sdjs3y3r0jewcan.1doqxe.5.6-7-w-1y-8
+frontier=D63F1.1s9cwvrwna300sdjs3y3r0jewcan
+display_block=5; computed_blocks=9; occupied_edges=84
+parity=forced_value1:4; challenge_value2:0; handout0:5
+block=E; value=4; short=0; handout=0; control_take=4; control=TAKE_ALL
+opening=B1–B2 公共边 | H-1-1 | edge=8 | (1,1)-(2,1)
+boxes=B1,C1,B2,C2
+capture_edges=V-0-2,H-1-2,V-1-2
+handout_edge=none
+analysis=exact:1; nodes:7; equivalent_minimum:2; candidate_blocks:10; compute_ms:7
+
+期望（用户判错，2026-08-01）：
+- 这是一个田字块（B1,C1,B2,C2，2×2 闭环）。
+- 控制方开边 H-1-1 后自己不完成格子 → 换手，对手被迫吃完整个 4 格闭环。
+- 正确标记：handout=4, control_take=0, control=KEEP_BY_4（主动权不转移）。
+- 旧算法误判 handout=0 / TAKE_ALL：findStandardHandout 排除了
+  gift == remaining（整个块让出）且没有"开边即让"（无额外边）候选。

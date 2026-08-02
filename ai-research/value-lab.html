@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dots & Boxes · 价值块分析实验室</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<main class="app">
+  <header>
+    <div><h1>价值块分析实验室</h1><p>单 Bot、逐块解析：开块后自动吃完强制区域，标记总价值、标准让块和主动权奇偶影响。</p></div>
+    <div class="links"><a href="index.html">目录</a><a href="protocol-inspector.html">协议检查器</a><a href="docs/HANDOFF.md">交接文档</a></div>
+  </header>
+  <section class="layout">
+    <aside class="stack">
+      <section class="panel">
+        <h2>生成与协议</h2>
+        <div class="row"><input id="seed" type="number" value="20260806" aria-label="随机种子"><button id="random">随机</button><button id="generate" class="primary">生成前沿</button></div>
+        <div class="row" style="margin-top:6px"><input id="loadCode" style="flex:1" placeholder="D63F1... 或 mask"><button id="load">读取</button></div>
+        <button id="copyAll" class="gold" style="width:100%;margin-top:6px">一键复制当前块全部信息</button>
+        <div id="status" class="status">尚未生成。</div>
+      </section>
+      <section class="panel">
+        <h2>全盘价值轨迹</h2>
+        <div id="blockList" class="block-list"><p>逐步计算后显示。</p></div>
+      </section>
+    </aside>
+
+    <section class="panel">
+      <div class="board-wrap"><canvas id="board" width="900" height="900" aria-label="8x8 缺角价值块棋盘"></canvas></div>
+      <div class="controls">
+        <button id="first">⏮</button><button id="prev">←</button><button id="next" class="primary">分析下一块 →</button><button id="last">已算末尾 ⏭</button>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="价值块步骤">
+      </div>
+    </section>
+
+    <aside class="stack right">
+      <section class="panel">
+        <h2>当前分析</h2>
+        <div id="current" class="current">生成安全前沿后，点击“分析下一块”。</div>
+      </section>
+      <section class="panel">
+        <h2>主动权与奇偶</h2>
+        <div class="metrics">
+          <div class="metric"><span>已识别价值序列</span><strong id="sequence">—</strong></div>
+          <div class="metric"><span>已解析格数</span><strong id="boxesDone">—</strong></div>
+          <div class="metric"><span>价值1 强制翻转</span><strong id="flipParity">—</strong></div>
+          <div class="metric"><span>价值2 争权机会</span><strong id="twoParity">—</strong></div>
+          <div class="metric"><span>可留 2 / 4 / 0</span><strong id="handouts">—</strong></div>
+          <div class="metric"><span>计算进度</span><strong id="progress">—</strong></div>
+        </div>
+        <p style="margin-top:7px">这里记录的是控制事件，不擅自把价值2判成确定归属；最终胜负模型将在价值标记稳定后接入。</p>
+      </section>
+      <section class="panel">
+        <h2>颜色说明</h2>
+        <div class="legend"><span><i class="swatch" style="background:#647571"></i> 前沿边</span><span><i class="swatch" style="background:#f2cb66"></i> 当前开块边</span><span><i class="swatch" style="background:#c89cff"></i> 标准留边</span></div>
+      </section>
+    </aside>
+  </section>
+</main>
+<script src="src/board.js"></script>
+<script src="src/frontier.js"></script>
+<script src="src/value-bot.js"></script>
+<script src="src/protocol.js"></script>
+<script src="src/lab.js"></script>
+</body>
+</html>
