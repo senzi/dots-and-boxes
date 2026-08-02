@@ -68,12 +68,23 @@
     $('twoParity').textContent = `${twos}（${twos % 2 ? '奇' : '偶'}）`
     $('handouts').textContent = `${blocks.filter(b=>b.handout===2).length} / ${blocks.filter(b=>b.handout===4).length} / ${blocks.filter(b=>b.handout===0).length}`
     $('progress').textContent = state.complete ? `${step}/${state.blocks.length} · 完成` : `${step}/${state.blocks.length} · 按需`
-    // 预期终盘比分（先手 = 玩家 0 开块）
+    // 预期终盘比分（静态）：先手开块的最优终盘
     try {
-      const res = Outcome.outcome(state.frontier, 0)
-      const who = res.winner === -1 ? '平局' : res.winner === 0 ? '先手胜' : '后手胜'
-      $('outcome').innerHTML = `<span style="color:var(--a)">先手 ${res.score[0]}</span> : <span style="color:var(--b)">${res.score[1]} 后手</span> <span style="color:var(--gold)">· ${who}</span>`
-    } catch (error) { $('outcome').textContent = '—' }
+      const full = Outcome.outcome(state.frontier, 0)
+      const who = full.winner === -1 ? '平局' : full.winner === 0 ? '先手胜' : '后手胜'
+      $('outcomeFull').innerHTML = `<span style="color:var(--a)">先手 ${full.score[0]}</span> : <span style="color:var(--b)">${full.score[1]} 后手</span> <span style="color:var(--gold)">· ${who}</span>`
+    } catch (error) { $('outcomeFull').textContent = '—' }
+    // 实时比分（按步数）：已消解块按最优路径归属累计
+    try {
+      const full = Outcome.outcome(state.frontier, 0)
+      let s0 = 0, s1 = 0, c = 0, node = full.tree
+      for (let i = 0; i < step && node; i++) {
+        if (c === 0) { s0 += node.take; s1 += node.give } else { s1 += node.take; s0 += node.give }
+        c = node.next
+        node = node.sub
+      }
+      $('outcomeLive').innerHTML = `<span style="color:var(--a)">先手 ${s0}</span> : <span style="color:var(--b)">${s1} 后手</span>`
+    } catch (error) { $('outcomeLive').textContent = '—' }
     // 控制权转移序列：倒序（最新在最上），并随回撤步数缩短
     const seqText = { FORCED_FLIP: '必然转移', TAKE_ALL: '必然转移', CHALLENGE_2: '可能转移', KEEP_BY_2: '保权·不转移', KEEP_BY_4: '保权·不转移', GAME_END: '终局' }
     const seqBlocks = blocks.slice().reverse()
