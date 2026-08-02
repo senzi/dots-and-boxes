@@ -49,6 +49,7 @@
       `frontier=${frontierCode(state.frontier)}`,
       `display_block=${displayStep}; computed_blocks=${state.blocks.length}; occupied_edges=${Board.bitCount(mask)}`,
       `parity=forced_value1:${visible.filter(block => block.value === 1).length}; challenge_value2:${visible.filter(block => block.value === 2).length}; handout0:${visible.filter(block => block.handout === 0).length}`,
+      `value_seq=${visible.map(block => block.value).join(',')}`,
       `control_seq=${visible.map(block => `${block.label}:${seqCode[block.controlCode] || '?'}`).join(',')}`
     ]
     if (shown) {
