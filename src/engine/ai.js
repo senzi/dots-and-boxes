@@ -1056,20 +1056,13 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
 export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null) {
   const moves = legalMoves(state)
   if (!moves.length) return null
-  const analysis = createL3Analysis()
 
   const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
   const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
 
-  // 1) 吃格阶段：恒保权 —— 能留 2/4 就留，绝不主动吃光放弃主动权
+  // 1) 吃格阶段：恒保权 —— 能留 2/4 就留（快速 handout 检测），绝不主动吃光放弃主动权
   if (captures.length) {
     if (safe.length) return chooseCapture(state, player, captures)
-    try {
-      const plan = bestControlPlanFull(state, player, analysis)
-      if (plan) return plan.move
-    } catch (error) {
-      if (error !== SHORT_SEARCH_ABORT) throw error
-    }
     const degrees = unclaimedDegrees(state)
     const handouts = handoutMoves(state, moves, degrees)
     if (handouts.length) {
@@ -1091,7 +1084,20 @@ export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null
     return best
   }
 
-  // 3) 安全前沿：开最小残余块（L3 组件排序），后续吃块时按规则 1 恒保权
+  // 3) 安全前沿：价值块估算开最小块（轻量版，同 L4 开边逻辑），吃块时按规则 1 恒保权
+  try {
+    const openings = L4Bridge.l4OpeningMoves(state)
+    if (openings && openings.length) {
+      const candidates = openings.filter(m => immediateGainFast(state, moveKey(m)) === 0)
+      if (candidates.length) {
+        candidates.sort((a, b) => moveKey(a).localeCompare(moveKey(b)))
+        return candidates[0]
+      }
+    }
+  } catch (error) {
+    // L4 价值估算异常时回退组件排序
+  }
+  // 回退：开最小残余块（L3 组件排序）
   const degrees = unclaimedDegrees(state)
   const components = residualComponents(state, degrees)
   const seed = stateHash(state)

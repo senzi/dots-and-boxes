@@ -66,6 +66,16 @@ export function l4Opening(state) {
   }
 }
 
+// 轻量开边决策：只返回最小价值块的开边（不跑 handout 搜索，快）
+// 用于不需要保权/翻转决策的场景（如 L5 恒保权策略）
+export function l4OpeningMoves(state) {
+  const board = boardForState(state)
+  const mask = stateToMask(state)
+  const groups = L4Value.enumerateValueBlocks(board, mask)
+  if (!groups.length) return null
+  return groups[0].openings.map(o => edgeIndexToMove(board, o.edge))
+}
+
 // 完整终盘预测（outcome DP）
 export function l4Predict(state, firstPlayer) {
   const board = boardForState(state)
