@@ -1,0 +1,6 @@
+{
+  "name": "d63-value-lab",
+  "private": true,
+  "type": "commonjs",
+  "description": "D63 价值块分析交付包（独立于主项目的 CommonJS 模块域）"
+}
