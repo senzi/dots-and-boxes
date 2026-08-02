@@ -918,6 +918,9 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
       if (plan) {
         if (plan.choice && plan.choice.includes('保权')) {
           // 该块应保权：严格 handout 计划（控制方吃 controlTake、让 handout）
+          // 注：预测的 handoutEdge 暂不直接执行 —— L4 的保权执行判定
+          // （bestControlPlanFull/handoutMoves）与预测（findStandardHandout）
+          // 标准不一致，直接放边会跳过 controlTake 的吃（2026-08-02 实测）
           try {
             const hPlan = bestControlPlanFull(state, player, analysis)
             if (hPlan) return hPlan.move
@@ -968,7 +971,8 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
           if (prediction.tree) {
             l4Plans.set(state, {
               controlCode: prediction.blocks[0] ? prediction.blocks[0].controlCode : null,
-              choice: prediction.tree.choice
+              choice: prediction.tree.choice,
+              handoutEdge: prediction.blocks[0] ? prediction.blocks[0].handoutEdge : null
             })
           }
         } catch (error) {

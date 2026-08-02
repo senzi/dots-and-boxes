@@ -40,8 +40,12 @@ function optionSet(block, c) {
 }
 
 // 从后向前 DP：控制方 c 在当前块选择最大化自己（c）的总收益
-function solve(blocks, firstPlayer) {
+// forceKeep：块索引集合，强制这些块选"保权"选项（探索用）
+// 内置规则（2026-08-02 实测）：主动让权块（能保权却选翻转）若其路径前面无保权块
+// （被迫翻转占主导），则逐个试算强制保权，玩家 0 收益更高才采用（贪心，只改善不劣化）
+function solve(blocks, firstPlayer, outerForce) {
   const n = blocks.length
+  let force = outerForce || null
   const memo = new Map()
   function rec(i, c) {
     if (i >= n) return [0, 0, null]
@@ -50,6 +54,7 @@ function solve(blocks, firstPlayer) {
     const block = blocks[i]
     let best = null
     for (const opt of optionSet(block, c)) {
+      if (force && force.has(i) && !opt.label.includes('保权')) continue
       const sub = rec(i + 1, opt.next)
       const cTotal = opt.take + (opt.next === c ? sub[0] : sub[1])
       const oppTotal = opt.give + (opt.next === c ? sub[1] : sub[0])
@@ -61,13 +66,42 @@ function solve(blocks, firstPlayer) {
     memo.set(key, result)
     return result
   }
-  return rec(0, firstPlayer)
+  const base = rec(0, firstPlayer)
+  if (outerForce) return base
+  // 规则：主视角（玩家 0）视角下，"前面无保权"的 activeGive 块逐个试算强制保权，
+  // 玩家 0 收益更高才采用（贪心；只改善不劣化）。
+  const viewScore = res => res[0] // cTotal = firstPlayer 收益
+  let node = base[2]
+  let sawKeep = false
+  const candidates = []
+  for (let i = 0; i < n; i++) {
+    const b = blocks[i]
+    const choice = node ? node.choice : null
+    const isActiveGive = !!choice && choice.includes('翻转') &&
+      b.handoutEdge !== null && b.controlCode !== 'FORCED_FLIP' && b.controlCode !== 'TAKE_ALL'
+    if (isActiveGive && !sawKeep) candidates.push(i)
+    if (choice && choice.includes('保权')) sawKeep = true
+    node = node && node.sub
+  }
+  let final = base
+  const forceSet = new Set()
+  if (candidates.length) {
+    for (const idx of candidates) {
+      const test = new Set(forceSet)
+      test.add(idx)
+      force = test
+      memo.clear()
+      const res = rec(0, firstPlayer)
+      if (viewScore(res) > viewScore(final)) { forceSet.add(idx); final = res }
+    }
+  }
+  return final
 }
 
 // 终盘收益与胜负：frontier = 安全前沿 mask，firstPlayer = 主动权方（吃块决策者，0/1）
 function outcome(board, frontier, firstPlayer, options) {
   const blocks = decompose(board, frontier, options)
-  const [cGain, oppGain, tree] = solve(blocks, firstPlayer)
+  const [cGain, oppGain, tree] = solve(blocks, firstPlayer, options && options.forceKeep)
   return {
     blocks,
     firstPlayer,

@@ -41,6 +41,12 @@ export function edgeIndexToMove(board, index) {
   return { dir: e.dir, r: e.r, c: e.c }
 }
 
+// 按当前棋盘尺寸把 ai-research 边索引转主项目 move
+export function l4MoveFromEdge(state, edgeIndex) {
+  const board = boardForState(state)
+  return edgeIndexToMove(board, edgeIndex)
+}
+
 // 安全前沿开边决策：分解当前局面，返回最小价值块（该开什么）
 // 附带当前块的标准让块（handout）与控制事件（留不留/保不保权）
 export function l4Opening(state) {
@@ -72,4 +78,4 @@ export function l4Predict(state, firstPlayer) {
   return L4Outcome.outcome(board, stateToMask(state), firstPlayer)
 }
 
-export default { stateToMask, edgeIndexToMove, l4Opening, l4Predict }
+export default { stateToMask, edgeIndexToMove, l4MoveFromEdge, l4Opening, l4Predict }
