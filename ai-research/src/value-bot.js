@@ -135,11 +135,11 @@
   }
 
   function controlMeaning(value, gift) {
-    if (value === 1) return { code: 'FORCED_FLIP', label: '价值1：必然转换主动权', parity: 1 }
-    if (value === 2) return { code: 'CHALLENGE_2', label: '价值2：无主动权方争夺主动权的机会', parity: 1 }
-    if (gift === 2) return { code: 'KEEP_BY_2', label: '可留2：控制方可保持主动权', parity: 0 }
-    if (gift === 4) return { code: 'KEEP_BY_4', label: '可留4：控制方可保持主动权', parity: 0 }
-    return { code: 'TAKE_ALL', label: '让0：吃光后必须打开下一块', parity: 1 }
+    if (value === 1) return { code: 'FORCED_FLIP', label: '强制翻转', parity: 1 }
+    if (value === 2) return { code: 'CHALLENGE_2', label: '争权2', parity: 1 }
+    if (gift === 2) return { code: 'KEEP_BY_2', label: '保权·让2', parity: 0 }
+    if (gift === 4) return { code: 'KEEP_BY_4', label: '保权·让4', parity: 0 }
+    return { code: 'TAKE_ALL', label: '全吃开块', parity: 1 }
   }
 
   function create(frontier, options) {
@@ -164,12 +164,20 @@
     if (!groups.length) { state.complete = true; return null }
     const minimum = groups[0].value
     const equivalent = groups.filter(group => group.value === minimum)
-    const chosenGroup = equivalent[0]
-    const chosen = chosenGroup.openings.slice().sort((a, b) => a.edge - b.edge)[0]
-    const anotherBlockRemains = chosen.endMask !== Board.FULL_MASK
-    const handout = anotherBlockRemains
-      ? findStandardHandout(chosen.startMask, chosen.boxes, state.options.handoutNodeLimit)
-      : { edge: null, gift: 0, take: chosen.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
+    // 严格化：等价组内按"让 2/4 后控制方净吃"（value - handout）最小排序。
+    // 先开保权后净吃最小的块；同净吃按开边编号稳定。
+    const ranked = equivalent.map(group => {
+      const chosen = group.openings.slice().sort((a, b) => a.edge - b.edge)[0]
+      const remains = chosen.endMask !== Board.FULL_MASK
+      const handout = remains
+        ? findStandardHandout(chosen.startMask, group.boxes, state.options.handoutNodeLimit)
+        : { edge: null, gift: 0, take: group.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
+      return { group, chosen, remains, handout, effective: group.value - handout.gift }
+    }).sort((a, b) => a.effective - b.effective || a.chosen.edge - b.chosen.edge)
+    const chosenGroup = ranked[0].group
+    const chosen = ranked[0].chosen
+    const anotherBlockRemains = ranked[0].remains
+    const handout = ranked[0].handout
     const meaning = controlMeaning(chosen.value, handout.gift)
     const blockIndex = state.blocks.length
     const allMoves = [chosen.edge, ...chosen.captureMoves]
