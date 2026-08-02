@@ -38,9 +38,10 @@ function discardSave() {
 function start() {
   let players
   if (mode.value === 'ai') {
+    const ai = AI_LEVELS.find(l => l.id === aiLevel.value) || AI_LEVELS[0]
     players = [
       { id: 'p1', name: p1.value.name.trim() || '玩家', avatar: p1.value.avatar },
-      { id: 'ai', name: settings.defaultAiName, avatar: settings.defaultAiAvatar }
+      { id: 'ai', name: ai.name, avatar: settings.defaultAiAvatar }
     ]
   } else {
     players = [
@@ -126,15 +127,17 @@ function start() {
             <AvatarNamePicker v-model:avatar="p2.avatar" v-model:name="p2.name" placeholder="玩家 2 昵称" />
           </div>
           <div v-else class="mt-16">
-            <div class="caption">AI 难度</div>
-            <div class="row gap-12 mt-8" style="flex-wrap: wrap">
+            <div class="caption">AI 对手</div>
+            <div class="ai-list mt-8">
               <button
                 v-for="lv in AI_LEVELS" :key="lv.id"
-                class="level-pill"
+                class="ai-item"
                 :class="{ active: aiLevel === lv.id }"
-                :title="lv.desc"
                 @click="aiLevel = lv.id"
-              >{{ lv.name }}</button>
+              >
+                <span class="ai-name">{{ lv.name }}</span>
+                <span class="ai-desc">{{ lv.desc }}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -162,6 +165,26 @@ function start() {
   gap: 16px;
 }
 .avatar.big { width: 52px; height: 52px; font-size: 26px; }
+
+/* AI 对手列表（魔兽争霸风格命名 + 战力副标题） */
+.ai-list { display: flex; flex-direction: column; gap: 8px; }
+.ai-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ai-item:hover { border-color: var(--p2); }
+.ai-item.active { border-color: var(--p2); background: var(--p2-fill); }
+.ai-name { font-weight: 700; font-size: 14px; color: var(--text); }
+.ai-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
 
 /* 未完成对局恢复条 */
 .resume-bar {

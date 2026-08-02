@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useHistoryStore } from '../stores/settings.js'
 import Board from '../components/Board.vue'
 import { SIZES } from '../engine/board.js'
+import { AI_LEVELS } from '../engine/ai.js'
 
 const history = useHistoryStore()
 
@@ -13,6 +14,10 @@ const fmtTime = (ts) => {
 }
 
 const modeLabel = (m) => m === 'ai' ? '人机' : '本地'
+function aiName(level) {
+  const lv = AI_LEVELS.find(l => l.id === level)
+  return lv ? lv.name : ''
+}
 
 // 棋盘尺寸标签
 function sizeLabel(id) {
@@ -74,7 +79,7 @@ function resultBadge(rec) {
         class="card row gap-16 rec-row" @click="open(r)"
       >
         <div class="col" style="width: 118px; flex-shrink: 0; text-align: left">
-          <span class="badge">{{ modeLabel(r.mode) }}<template v-if="r.aiLevel"> · L{{ r.aiLevel }}</template></span>
+          <span class="badge">{{ modeLabel(r.mode) }}<template v-if="r.aiLevel"> · {{ aiName(r.aiLevel) }}</template></span>
           <span class="caption muted mt-8" style="text-transform: none; letter-spacing: 0">{{ fmtTime(r.date) }}</span>
         </div>
         <div class="row gap-8 flex-1">

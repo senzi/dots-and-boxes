@@ -6,10 +6,10 @@
 
 // 可选棋盘尺寸
 export const SIZES = [
-  { id: 's8', label: '8×8 · 63 格', grid: 8 },
-  { id: 's6', label: '6×6 · 35 格', grid: 6 }
+  { id: 's6', label: '6×6 · 35 格', grid: 6 },
+  { id: 's8', label: '8×8 · 63 格', grid: 8 }
 ]
-export const DEFAULT_SIZE = 's8'
+export const DEFAULT_SIZE = 's6'
 export const REMOVED = { r: 0, c: 0 } // 被移除的角点（左上角）
 
 // 当前棋盘尺寸（全局单例；开局时由 game store 调用 setBoardSize 设定）

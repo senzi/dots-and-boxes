@@ -15,10 +15,10 @@ buildTables()
 const l4Plans = new WeakMap()
 
 export const AI_LEVELS = [
-  { id: 1, name: '休闲', desc: '新手友好，随机落子、避开陷阱' },
-  { id: 2, name: '策略', desc: '普通玩家水平，安全边 + 链分析' },
-  { id: 3, name: '大师', desc: '安全前沿 + 分块控制 + 吃子链搜索' },
-  { id: 4, name: '宗师', desc: '安全前沿价值块估算 + 终盘预测（L4）' }
+  { id: 1, name: '新兵', title: '休闲', desc: '初出茅庐，落子随缘，偶尔上头' },
+  { id: 2, name: '老兵', title: '策略', desc: '身经百战，会吃格、懂避坑，稳扎稳打' },
+  { id: 3, name: '王牌', title: '大师', desc: '端局 Loony + 主动权控制，沙场老将' },
+  { id: 4, name: '疯狂的算师', title: '宗师', desc: '价值块全局演算，算尽终盘每一子' }
 ]
 
 // ---------- 工具 ----------
