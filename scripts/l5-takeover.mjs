@@ -1,23 +1,26 @@
-// L5 接管翻盘率：生成前沿 → 判别主视角输（=L4 败局）→ 倒回到安全边≥20 → L5 接管构造前沿 → 判别
-// node scripts/l5-takeover.mjs [局数] [接管前瞻阈值] [sims]
+// L5 接管翻盘率（一次评估版，不逐手下棋）：
+// 生成前沿 → 判别主视角输（=L4 败局）→ 倒回到安全边≥阈值 → L5 选最优边
+// → 该边填后随机补全到前沿 → 判别 → 翻盘率
+// node scripts/l5-takeover.mjs [局数] [阈值] [sims] [seedBase] [dynamic] [budget] [explore]
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const ARBoard = require('../ai-research/src/board.js')
 const Frontier = require('../ai-research/src/frontier.js')
 const Outcome = require('../ai-research/src/outcome.js')
 
-const count = Number(process.argv[2] || 20)
+const count = Number(process.argv[2] || 40)
 const THRESHOLD = Number(process.argv[3] || 20)
 const sims = Number(process.argv[4] || 3)
 const maxCandidates = 6
-const seedBase = Number(process.argv[5] || 110000)
-// 动态参数开关：1 = 用用户方案（候选=50%↑最小5，sims≥3且乘积<预算）
-const DYNAMIC = Number(process.argv[6] || 0)
-const BUDGET = Number(process.argv[7] || 40) // sims×候选数 上限
-// 探索步数（评估时先模拟 N 步贴边策略下子，再终盘随机补全；0 = 直接随机补全）
-const EXPLORE = Number(process.argv[8] || 0)
+const seedBase = Number(process.argv[5] || 120000)
+const DYNAMIC = Number(process.argv[6] || 1)
+const BUDGET = Number(process.argv[7] || 28) // sims×候选数 上限（轻化：40→28）
+const EXPLORE = Number(process.argv[8] || 10) // 探索步数：前 N 步贴边策略，之后终盘随机
+const TAKE_STEPS = Number(process.argv[9] || 10) // 接管前瞻步数（1=一次评估，10=逐手）
 
-function growFull(mask, rngSeed, style = 'stick') {
+let simCounter = 9000000
+
+function growFull(mask, rngSeed) {
   const rng = Frontier.mulberry32(rngSeed)
   let lastMove = null
   let step = 0
@@ -26,8 +29,7 @@ function growFull(mask, rngSeed, style = 'stick') {
     if (!safe.length) return mask
     let choices = safe
     // 探索阶段（前 EXPLORE 步）：贴边风格（模拟双方策略下子）；之后终盘随机
-    const inExplore = EXPLORE > 0 && step < EXPLORE
-    if (inExplore && style === 'stick' && lastMove != null) {
+    if (step < EXPLORE && lastMove != null) {
       const prior = ARBoard.edges[lastMove]
       const endpoints = e => e.dir === 'H' ? [[e.c, e.r], [e.c + 1, e.r]] : [[e.c, e.r], [e.c, e.r + 1]]
       const touches = safe.filter(index => {
@@ -51,9 +53,7 @@ function rewind(frontier, target, seed) {
     if (safe.length >= target) return { mask, safeCount: safe.length }
     const filled = ARBoard.edges.map(e => e.index).filter(i => ARBoard.has(mask, i))
     if (!filled.length) return { mask, safeCount: safe.length }
-    const pick = filled[Math.floor(rng() * filled.length)]
-    // 删边：只删"不破坏已得分格"的边（简单：直接删，安全前沿无完成格）
-    mask &= ~(1n << BigInt(pick))
+    mask &= ~(1n << BigInt(filled[Math.floor(rng() * filled.length)]))
   }
 }
 
@@ -75,13 +75,11 @@ function stickChoice(mask, safe) {
   return best
 }
 
-let simCounter = 2000000
-// L5 接管安全阶段：剩 ≤THRESHOLD 安全边前瞻选边；否则贴边
-// 动态参数（DYNAMIC=1）：候选 = 安全边数 50% 向上取整最小5；sims≥3 且 sims×候选<BUDGET
-function l5TakeoverStep(mask, safe, player) {
+// L5 选最优边：候选 × sims 判别（生成前沿 → 判决器，评估当前方 player 净胜）
+function l5ChooseEdge(mask, safe, player) {
   if (safe.length > THRESHOLD) return stickChoice(mask, safe)
   const nCand = DYNAMIC ? Math.max(5, Math.ceil(safe.length * 0.5)) : maxCandidates
-  const nSims = DYNAMIC ? Math.max(3, Math.floor(BUDGET / nCand)) : sims
+  const nSims = DYNAMIC ? Math.max(2, Math.floor(BUDGET / nCand)) : sims
   const step = Math.max(1, Math.floor(safe.length / nCand))
   const candidates = safe.filter((_, i) => i % step === 0).slice(0, nCand)
   let best = candidates[0], bestNet = -Infinity
@@ -99,19 +97,20 @@ function l5TakeoverStep(mask, safe, player) {
   return best
 }
 
-// L5 接管：从倒回局面交替填安全边到前沿（L5=主视角玩家0 前瞻，对手=贴边）
+// L5 接管（N 步版）：L5 前瞻选边 × TAKE_STEPS 步（与对手贴边交替），之后随机补全
+// TAKE_STEPS=1 一次评估（快但粗）；=10 逐手（贵但准）；中间值折中
 function takeover(rewindMask, seed) {
   let mask = rewindMask
-  let player = 0 // 主视角（L5 接管方）先下
-  let guard = 0
-  while (guard++ < 100) {
+  for (let s = 0; s < TAKE_STEPS; s++) {
     const safe = ARBoard.legal(mask).filter(i => ARBoard.danger(mask, i) === 0)
     if (!safe.length) break
-    const pick = player === 0 ? l5TakeoverStep(mask, safe, 0) : stickChoice(mask, safe)
-    mask = ARBoard.put(mask, pick)
-    player = 1 - player
+    const best = l5ChooseEdge(mask, safe, 0)
+    mask = ARBoard.put(mask, best)
+    const safe2 = ARBoard.legal(mask).filter(i => ARBoard.danger(mask, i) === 0)
+    if (!safe2.length) break
+    mask = ARBoard.put(mask, stickChoice(mask, safe2))
   }
-  return mask
+  return growFull(mask, seed * 17 + 3)
 }
 
 let total = 0, flipped = 0, improved = 0
@@ -131,7 +130,7 @@ for (let i = 0; i < count; i++) {
   if (samples.length < 8) samples.push({ seed, before: `${pred0.score[0]}:${pred0.score[1]}`, after: `${pred1.score[0]}:${pred1.score[1]}`, flip: pred1.score[0] > pred1.score[1], rewind: rewinded.safeCount })
 }
 
-console.log(`=== L5 接管翻盘率（${count} 生成 · ${total} 个 L4 败局 · 阈值${THRESHOLD} · sims${sims}） ===`)
+console.log(`=== L5 接管翻盘率（${count} 生成 · ${total} 个 L4 败局 · 阈值${THRESHOLD} · 动态${DYNAMIC}预算${BUDGET} · 探索${EXPLORE}） ===`)
 console.log(`总耗时 ${((Date.now() - t0) / 1000).toFixed(0)}s · 每败局 ${total ? ((Date.now() - t0) / 1000 / total).toFixed(1) : 0}s`)
 console.log(`翻盘（败→胜）: ${flipped}/${total}（${(flipped / total * 100).toFixed(1)}%）`)
 console.log(`比分改善: ${improved}/${total}（${(improved / total * 100).toFixed(1)}%）`)

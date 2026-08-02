@@ -46,6 +46,7 @@ function buildBoard(N) {
   const legal = mask => edges.filter(edge => !has(mask, edge.index)).map(edge => edge.index)
   const gain = (mask, edge) => edges[edge].boxes.filter(box => !boxComplete(mask, box) && boxComplete(put(mask, edge), box)).length
   const claimedBy = (mask, edge) => edges[edge].boxes.filter(box => !boxComplete(mask, box) && boxComplete(put(mask, edge), box))
+  const danger = (mask, edge) => edges[edge].boxes.filter(box => !boxComplete(mask, box) && degrees(put(mask, edge))[box] === 3).length
 
   function connectedBoxes(boxSet) {
     // 格子集合是否通过共享边连通（相邻关系与边是否已填无关）
@@ -66,7 +67,7 @@ function buildBoard(N) {
     return seen.size === boxSet.size
   }
 
-  return { N, edges, boxes, edgeById, FULL_MASK, has, put, bitCount, boxComplete, degrees, legal, gain, claimedBy, connectedBoxes }
+  return { N, edges, boxes, edgeById, FULL_MASK, has, put, bitCount, boxComplete, degrees, legal, gain, claimedBy, danger, connectedBoxes }
 }
 
 const cache = new Map()

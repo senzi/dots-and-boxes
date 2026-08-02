@@ -47,6 +47,80 @@ export function l4MoveFromEdge(state, edgeIndex) {
   return edgeIndexToMove(board, edgeIndex)
 }
 
+// ---------- L5 研究版：安全阶段前瞻（移植 ai-research grow-with-mistakes 思路） ----------
+
+// mulberry32 PRNG（与 ai-research 一致）
+function mulberry32(seed) {
+  let value = seed >>> 0
+  return function () {
+    value |= 0
+    value = value + 0x6D2B79F5 | 0
+    let t = Math.imul(value ^ value >>> 15, 1 | value)
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+}
+
+// 生长到极大安全前沿：前 explore 步贴边风格（模拟策略下子），之后终盘随机
+// 返回极大前沿 mask
+export function l5GrowFull(board, mask, seed, explore = 10) {
+  const rng = mulberry32(seed)
+  let lastMove = null
+  let step = 0
+  while (true) {
+    const legal = board.legal(mask)
+    const safe = legal.filter(i => board.danger(mask, i) === 0)
+    if (!safe.length) return mask
+    let choices = safe
+    if (step < explore && lastMove != null) {
+      const prior = board.edges[lastMove]
+      const endpoints = e => e.dir === 'H' ? [[e.c, e.r], [e.c + 1, e.r]] : [[e.c, e.r], [e.c, e.r + 1]]
+      const touches = safe.filter(index => {
+        const edge = board.edges[index]
+        return endpoints(edge).some(a => endpoints(prior).some(b => a[0] === b[0] && a[1] === b[1]))
+      })
+      if (touches.length) choices = touches
+    }
+    lastMove = choices[Math.floor(rng() * choices.length)]
+    mask = board.put(mask, lastMove)
+    step++
+  }
+}
+
+// L5 安全阶段选边（safeChooser）：剩 ≤threshold 条安全边才前瞻；否则返回 null（回退贴边）
+// 前瞻：候选边（安全边 50% 向上取整最小 5）→ 填 → 生长到前沿 → 判决器比分 → 选最优
+// sims ≥ 2 且 sims × 候选 ≤ budget（预算控制每步耗时）
+export function l5SafeChooser(state, safeMoves, player, lastMove, options = {}) {
+  const threshold = options.threshold || 30
+  const budget = options.budget || 28
+  const explore = options.explore || 10
+  if (safeMoves.length > threshold) return null
+  const board = boardForState(state)
+  const baseMask = stateToMask(state)
+  const nCand = Math.max(5, Math.ceil(safeMoves.length * 0.5))
+  const step = Math.max(1, Math.floor(safeMoves.length / nCand))
+  const candidates = safeMoves.filter((_, i) => i % step === 0).slice(0, nCand)
+  const nSims = Math.max(2, Math.floor(budget / nCand))
+  let best = null
+  let bestNet = -Infinity
+  let seedBase = 9000000
+  for (const move of candidates) {
+    const e = board.edgeById.get(`${move.dir}-${move.r}-${move.c}`)
+    if (!e) continue
+    const mask1 = board.put(baseMask, e.index)
+    let net = 0
+    for (let g = 0; g < nSims; g++) {
+      const f = l5GrowFull(board, mask1, seedBase + g * 7919, explore)
+      const pred = L4Outcome.outcome(board, f, 1)
+      net += player === 0 ? pred.score[0] - pred.score[1] : pred.score[1] - pred.score[0]
+    }
+    const avgNet = net / nSims
+    if (avgNet > bestNet) { bestNet = avgNet; best = move }
+    seedBase += 1000
+  }
+  return best
+}
+
 // 安全前沿开边决策：分解当前局面，返回最小价值块（该开什么）
 // 附带当前块的标准让块（handout）与控制事件（留不留/保不保权）
 export function l4Opening(state) {
@@ -78,4 +152,4 @@ export function l4Predict(state, firstPlayer) {
   return L4Outcome.outcome(board, stateToMask(state), firstPlayer)
 }
 
-export default { stateToMask, edgeIndexToMove, l4MoveFromEdge, l4Opening, l4Predict }
+export default { stateToMask, edgeIndexToMove, l4MoveFromEdge, l4Opening, l4Predict, l5GrowFull, l5SafeChooser }

@@ -8,6 +8,9 @@ import {
 } from './board.js'
 import L4Bridge from './l4/l4-bridge.js'
 
+// L5 安全阶段前瞻选边器（剩 ≤20 安全边时启发式搜索，其余回退贴边）
+const L5_SAFE_CHOOSER = (state, safe, player, lastMove) => L4Bridge.l5SafeChooser(state, safe, player, lastMove)
+
 buildTables()
 
 // L4 跨步计划缓存：开块时（安全前沿）用全局预测确定当前块的保权/翻转决策，
@@ -25,7 +28,8 @@ export const AI_LEVELS = [
   { id: 1, name: '新兵', title: '休闲', desc: '初出茅庐，落子随缘，偶尔上头' },
   { id: 2, name: '老兵', title: '策略', desc: '身经百战，会吃格、懂避坑，稳扎稳打' },
   { id: 3, name: '王牌', title: '大师', desc: '端局 Loony + 主动权控制，沙场老将' },
-  { id: 4, name: '疯狂的算师', title: '宗师', desc: '价值块全局演算，算尽终盘每一子' }
+  { id: 4, name: '疯狂的算师', title: '宗师', desc: '价值块全局演算，算尽终盘每一子' },
+  { id: 5, name: '算无遗策', title: '神算', desc: '安全阶段前瞻演算，预判终盘每一手' }
 ]
 
 // ---------- 工具 ----------
@@ -1041,10 +1045,17 @@ export function getAiMove(level, state, player, lastMove = null, controlOwner = 
   if (level === 1) return aiMoveLevel1(state, player)
   if (level === 3) return aiMoveLevel3(state, player, lastMove, controlOwner)
   if (level === 4) return aiMoveLevel4(state, player, lastMove, controlOwner)
+  if (level === 5) return aiMoveLevel5(state, player, lastMove, controlOwner)
   return aiMoveLevel2(state, player)
+}
+
+// L5 神算：L4 核心 + 安全阶段前瞻选边（剩 ≤20 安全边时启发式搜索）
+export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null) {
+  return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER)
 }
 
 export function aiMoveDelay(level) {
   if (level === 4) return 120
+  if (level === 5) return 350
   return level === 3 ? 220 : 350
 }

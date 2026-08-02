@@ -120,5 +120,17 @@
     }
   }
 
-  return { decompose, outcome }
+  // 从已分解 blocks 直接求解（缓存用：同块结构跳过分解）
+  function solveFromBlocks(blocks, firstPlayer, options) {
+    const [cGain, oppGain, tree] = solve(blocks, firstPlayer, options && options.forceKeep, options && options.enableRule)
+    return {
+      blocks,
+      firstPlayer,
+      score: firstPlayer === 0 ? [cGain, oppGain] : [oppGain, cGain],
+      winner: cGain > oppGain ? 0 : oppGain > cGain ? 1 : -1,
+      tree
+    }
+  }
+
+  return { decompose, solveFromBlocks, outcome }
 })
