@@ -57,8 +57,30 @@ watch(() => game.over, (v) => {
       score: [a, b],
       board: JSON.parse(JSON.stringify(game.board))  // 终盘局面快照（可回看）
     })
+    // L4/L5 且人类获胜 → 控制台打印复盘文本
+    if (game.mode === 'ai' && (game.aiLevel === 4 || game.aiLevel === 5) && game.winner === 0) {
+      printReplay(a, b)
+    }
   }
 })
+
+// 控制台复盘文本：难度 + 比分 + 完整落子序列（可在空棋盘按序列重走）
+function printReplay(humanScore, aiScore) {
+  const lv = AI_LEVELS.find(l => l.id === game.aiLevel)
+  const aiName = lv ? `${lv.name} L${lv.id}` : `L${game.aiLevel}`
+  const boardLabel = game.boardLabel
+  const lines = []
+  lines.push('==============================================')
+  lines.push(`复盘 · 你赢了 ${aiName}`)
+  lines.push(`${boardLabel} · 你 ${humanScore} : AI ${aiScore}`)
+  lines.push('落子序列（P0=你 P1=AI，可空棋盘按序重走）:')
+  game.moveLog.forEach((m, i) => {
+    const n = String(i + 1).padStart(3, '0')
+    lines.push(`  ${n}. P${m.player} ${m.dir}-${m.r}-${m.c}`)
+  })
+  lines.push('==============================================')
+  console.log(lines.join('\n'))
+}
 
 function again() {
   saved.value = false

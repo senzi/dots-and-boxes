@@ -32,7 +32,8 @@ export const useGameStore = defineStore('game', {
     over: false,
     winner: null,        // 0 | 1 | -1(平局)
     aiThinking: false,
-    moveCount: 0
+    moveCount: 0,
+    moveLog: []        // [{player, dir, r, c}] 完整落子序列（复盘用）
   }),
 
   getters: {
@@ -66,6 +67,7 @@ export const useGameStore = defineStore('game', {
       this.winner = null
       this.aiThinking = false
       this.moveCount = 0
+      this.moveLog = []
       this.clearSnapshot()        // 开新局：作废旧缓存
       // AI 先手（随机决定谁先，简单起见玩家先手；AI 模式固定玩家先手）
       if (mode === 'ai' && Math.random() < 0.08) {
@@ -87,6 +89,7 @@ export const useGameStore = defineStore('game', {
           current: this.current,
           controlOwner: this.controlOwner,
           moveCount: this.moveCount,
+          moveLog: this.moveLog,
           over: this.over,
           winner: this.winner
         }))
@@ -115,6 +118,7 @@ export const useGameStore = defineStore('game', {
       this.current = snap.current
       this.controlOwner = snap.controlOwner === 0 || snap.controlOwner === 1 ? snap.controlOwner : 1 - snap.current
       this.moveCount = snap.moveCount
+      this.moveLog = snap.moveLog || []
       this.over = snap.over
       this.winner = snap.winner
       this.aiThinking = false
@@ -137,6 +141,7 @@ export const useGameStore = defineStore('game', {
       if (!res.ok) return res
       this.controlOwner = nextControlOwner
       this.moveCount++
+      this.moveLog.push({ player, dir, r, c })
       this.lastMove = { dir, r, c, player }
       this.lastGain = res.completed
       if (res.gained === 0) {
