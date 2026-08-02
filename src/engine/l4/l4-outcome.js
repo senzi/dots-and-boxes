@@ -1,10 +1,9 @@
-// L4 终盘收益预测（ESM 移植自 ai-research/src/outcome.js）
-import L4Board from './l4-board.js'
+// L4 终盘收益预测（ESM 移植自 ai-research/src/outcome.js，参数化 board）
 import L4Value from './l4-value.js'
 
 // 价值块序列（完整分解）
-function decompose(frontier, options) {
-  const state = L4Value.create(frontier, options)
+function decompose(board, frontier, options) {
+  const state = L4Value.create(board, frontier, options)
   while (!state.complete) L4Value.next(state)
   return state.blocks
 }
@@ -59,9 +58,9 @@ function solve(blocks, firstPlayer) {
   return rec(0, firstPlayer)
 }
 
-// 终盘收益与胜负：frontier = 安全前沿 mask，firstPlayer = 轮到谁开块（0/1）
-function outcome(frontier, firstPlayer, options) {
-  const blocks = decompose(frontier, options)
+// 终盘收益与胜负：frontier = 安全前沿 mask，firstPlayer = 主动权方（吃块决策者，0/1）
+function outcome(board, frontier, firstPlayer, options) {
+  const blocks = decompose(board, frontier, options)
   const [cGain, oppGain, tree] = solve(blocks, firstPlayer)
   return {
     blocks,

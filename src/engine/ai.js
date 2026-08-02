@@ -949,11 +949,11 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
   // 2) 安全阶段：绝不主动制造三边格。
   if (safe.length) return chooseStrategicSafe(state, safe, player, lastMove)
 
-  // 3) 安全前沿：价值块估算 → 开最小价值块（L4 核心，仅 8×8）。
+  // 3) 安全前沿：价值块估算 → 开最小价值块（L4 核心，任意尺寸）。
   //    分解当前局面（试下取最小），第一块 = 该开什么；等价开边价值相同，
   //    稳定选择（edge 字典序）。同时用全局预测确定本块保权/翻转计划。
   try {
-    const opening = L4Bridge.l4Supported(state) ? L4Bridge.l4Opening(state) : null
+    const opening = L4Bridge.l4Opening(state)
     if (opening && opening.openings.length) {
       const candidates = opening.openings.filter(m => immediateGainFast(state, moveKey(m)) === 0)
       if (candidates.length) {

@@ -22,7 +22,7 @@
 
 ## 模块
 
-- `src/engine/l4/l4-board.js`：8×8 缺角棋盘，BigInt mask（移植 ai-research）
+- `src/engine/l4/l4-board.js`：参数化缺角棋盘（getBoard(N)，BigInt mask，移植 ai-research，支持 6×6/8×8/10×10）
 - `src/engine/l4/l4-value.js`：价值块算法（机械闭包 + 标准让块 + 控制事件）
 - `src/engine/l4/l4-outcome.js`：终盘预测 DP（每块保权/翻转最优）
 - `src/engine/l4/l4-bridge.js`：主项目 state ↔ mask 转换 + `l4Opening`/`l4Predict`

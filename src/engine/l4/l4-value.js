@@ -1,7 +1,7 @@
 // L4 价值块算法（ESM 移植自 ai-research/src/value-bot.js）
-import L4Board from './l4-board.js'
+// 参数化：board 实例显式传入，支持任意尺寸（6×6 / 8×8 / 10×10）
 
-function captureClosure(startMask, allowedBoxes) {
+function captureClosure(board, startMask, allowedBoxes) {
   // 机械闭包：开边后反复吃掉所有可得分边，直到无可得分边。
   // 价值判断的"试下"指不同开边之间取最小（2026-08-01 用户确认）；
   // 吃边顺序分支不做最小化（例如田字内边被开，连锁吞并邻块就是闭包结果）。
@@ -10,23 +10,23 @@ function captureClosure(startMask, allowedBoxes) {
   const claimed = new Set()
   const allowed = allowedBoxes || null
   while (true) {
-    const scoring = L4Board.legal(mask)
-      .map(edge => ({ edge, boxes: L4Board.claimedBy(mask, edge) }))
+    const scoring = board.legal(mask)
+      .map(edge => ({ edge, boxes: board.claimedBy(mask, edge) }))
       .filter(item => item.boxes.length && (!allowed || item.boxes.every(box => allowed.has(box))))
       .sort((a, b) => b.boxes.length - a.boxes.length || a.edge - b.edge)
     if (!scoring.length) break
     const choice = scoring[0]
-    mask = L4Board.put(mask, choice.edge)
+    mask = board.put(mask, choice.edge)
     moves.push(choice.edge)
     for (const box of choice.boxes) claimed.add(box)
   }
   return { mask, moves, claimed: [...claimed].sort((a, b) => a - b) }
 }
 
-function openingAnalysis(mask, edge) {
-  const start = L4Board.put(mask, edge)
-  const closure = captureClosure(start)
-  const claimed = closure.claimed.filter(box => !L4Board.boxComplete(mask, box))
+function openingAnalysis(board, mask, edge) {
+  const start = board.put(mask, edge)
+  const closure = captureClosure(board, start)
+  const claimed = closure.claimed.filter(box => !board.boxComplete(mask, box))
   return {
     edge,
     startMask: start,
@@ -38,10 +38,10 @@ function openingAnalysis(mask, edge) {
   }
 }
 
-function enumerateValueBlocks(mask) {
+function enumerateValueBlocks(board, mask) {
   const groups = new Map()
-  for (const edge of L4Board.legal(mask)) {
-    const row = openingAnalysis(mask, edge)
+  for (const edge of board.legal(mask)) {
+    const row = openingAnalysis(board, mask, edge)
     const key = row.signature || `empty:${edge}`
     if (!groups.has(key)) groups.set(key, { signature: key, value: row.value, boxes: row.boxes, openings: [] })
     groups.get(key).openings.push(row)
@@ -60,9 +60,9 @@ function betterHandout(a, b) {
   return a
 }
 
-function findStandardHandout(startMask, targetBoxes, nodeLimit) {
+function findStandardHandout(board, startMask, targetBoxes, nodeLimit) {
   const target = new Set(targetBoxes)
-  const relevantEdges = new Set(targetBoxes.flatMap(box => L4Board.boxes[box].edges))
+  const relevantEdges = new Set(targetBoxes.flatMap(box => board.boxes[box].edges))
   const memo = new Map()
   let nodes = 0
   let truncated = false
@@ -73,32 +73,32 @@ function findStandardHandout(startMask, targetBoxes, nodeLimit) {
     nodes++
     if (nodes > nodeLimit) { truncated = true; return null }
 
-    const remaining = targetBoxes.filter(box => !L4Board.boxComplete(mask, box))
+    const remaining = targetBoxes.filter(box => !board.boxComplete(mask, box))
     if (!remaining.length) { memo.set(key, null); return null }
-    const active = new Set(remaining.filter(box => L4Board.bitCount(mask & L4Board.boxes[box].mask) === 3))
+    const active = new Set(remaining.filter(box => board.bitCount(mask & board.boxes[box].mask) === 3))
     let best = null
 
     for (const edge of relevantEdges) {
-      if (L4Board.has(mask, edge) || L4Board.gain(mask, edge)) continue
-      const closure = captureClosure(L4Board.put(mask, edge), target)
+      if (board.has(mask, edge) || board.gain(mask, edge)) continue
+      const closure = captureClosure(board, board.put(mask, edge), target)
       const gift = closure.claimed.filter(box => remaining.includes(box))
       const giftSet = new Set(gift)
       // 允许让出整个块（gift == remaining）：田字让 4 / 短链让 2 都是
       // 合法的 KEEP_BY_4 / KEEP_BY_2，控制方保持主动权。
       if (![2, 4].includes(gift.length)) continue
       if ([...active].some(box => !giftSet.has(box))) continue
-      if (!L4Board.connectedBoxes(giftSet)) continue
+      if (!board.connectedBoxes(giftSet)) continue
       best = betterHandout(best, { edge, gift: gift.length, take: 0, giftBoxes: gift, path: [], exact: true })
     }
 
     const scoring = [...relevantEdges]
-      .filter(edge => !L4Board.has(mask, edge))
-      .map(edge => ({ edge, claimed: L4Board.claimedBy(mask, edge).filter(box => target.has(box)) }))
+      .filter(edge => !board.has(mask, edge))
+      .map(edge => ({ edge, claimed: board.claimedBy(mask, edge).filter(box => target.has(box)) }))
       .filter(item => item.claimed.length)
       .sort((a, b) => b.claimed.length - a.claimed.length || a.edge - b.edge)
 
     for (const item of scoring) {
-      const future = search(L4Board.put(mask, item.edge))
+      const future = search(board.put(mask, item.edge))
       if (!future) continue
       best = betterHandout(best, {
         ...future,
@@ -112,14 +112,14 @@ function findStandardHandout(startMask, targetBoxes, nodeLimit) {
 
   // 候选 0：开边后不额外放边，直接换手，对手闭包恰好吃 2/4 格。
   // 这是田字/短链"开边即让"的标准让块（handoutEdge 为 null）。
-  const remaining0 = targetBoxes.filter(box => !L4Board.boxComplete(startMask, box))
-  const direct = captureClosure(startMask, target)
+  const remaining0 = targetBoxes.filter(box => !board.boxComplete(startMask, box))
+  const direct = captureClosure(board, startMask, target)
   const directGift = direct.claimed.filter(box => remaining0.includes(box))
   const directSet = new Set(directGift)
   let best = null
   if ([2, 4].includes(directGift.length)) {
-    const active0 = new Set(remaining0.filter(box => L4Board.bitCount(startMask & L4Board.boxes[box].mask) === 3))
-    if (![...active0].some(box => !directSet.has(box)) && L4Board.connectedBoxes(directSet)) {
+    const active0 = new Set(remaining0.filter(box => board.bitCount(startMask & board.boxes[box].mask) === 3))
+    if (![...active0].some(box => !directSet.has(box)) && board.connectedBoxes(directSet)) {
       best = betterHandout(best, { edge: null, gift: directGift.length, take: 0, giftBoxes: directGift, path: [], exact: true })
     }
   }
@@ -139,34 +139,36 @@ function controlMeaning(value, gift) {
   return { code: 'TAKE_ALL', label: '全吃开块', parity: 1 }
 }
 
-function create(frontier, options) {
+function create(board, frontier, options) {
   return {
+    board,
     format: 'D63V1',
     frontier,
     mask: frontier,
     blocks: [],
     edgeOwners: new Map(),
-    boxBlock: Array(L4Board.boxes.length).fill(-1),
-    complete: frontier === L4Board.FULL_MASK,
+    boxBlock: Array(board.boxes.length).fill(-1),
+    complete: frontier === board.FULL_MASK,
     options: { handoutNodeLimit: 30000, ...(options || {}) },
     parity: { forcedFlips: 0, challengeTwos: 0, takeAll: 0 }
   }
 }
 
 function next(state) {
+  const board = state.board
   if (state.complete) return null
-  if (L4Board.legal(state.mask).some(edge => L4Board.gain(state.mask, edge))) throw new Error('价值 Bot 的步间状态必须没有待吃边')
+  if (board.legal(state.mask).some(edge => board.gain(state.mask, edge))) throw new Error('价值 Bot 的步间状态必须没有待吃边')
   const started = Date.now()
-  const groups = enumerateValueBlocks(state.mask)
+  const groups = enumerateValueBlocks(board, state.mask)
   if (!groups.length) { state.complete = true; return null }
   const minimum = groups[0].value
   const equivalent = groups.filter(group => group.value === minimum)
   // 以价值优先：等价组不因让多让少改变先后（2026-08-01 用户确认，让多少不参与排序）
   const chosenGroup = equivalent[0]
   const chosen = chosenGroup.openings.slice().sort((a, b) => a.edge - b.edge)[0]
-  const anotherBlockRemains = chosen.endMask !== L4Board.FULL_MASK
+  const anotherBlockRemains = chosen.endMask !== board.FULL_MASK
   const handout = anotherBlockRemains
-    ? findStandardHandout(chosen.startMask, chosen.boxes, state.options.handoutNodeLimit)
+    ? findStandardHandout(board, chosen.startMask, chosen.boxes, state.options.handoutNodeLimit)
     : { edge: null, gift: 0, take: chosen.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
   // 最后一块是终局：吃光即游戏结束，不存在"转移主动权"，不计控制事件（2026-08-01）
   const meaning = anotherBlockRemains
@@ -203,11 +205,11 @@ function next(state) {
     parityDelta: meaning.parity,
     equivalentMinimumBlocks: equivalent.length,
     candidateBlockCount: groups.length,
-    remainingEdges: L4Board.legal(state.mask).length,
+    remainingEdges: board.legal(state.mask).length,
     computeMs: Date.now() - started
   }
   state.blocks.push(block)
-  state.complete = state.mask === L4Board.FULL_MASK
+  state.complete = state.mask === board.FULL_MASK
   return block
 }
 
