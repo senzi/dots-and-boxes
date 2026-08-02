@@ -164,20 +164,13 @@
     if (!groups.length) { state.complete = true; return null }
     const minimum = groups[0].value
     const equivalent = groups.filter(group => group.value === minimum)
-    // 严格化：等价组内按"让 2/4 后控制方净吃"（value - handout）最小排序。
-    // 先开保权后净吃最小的块；同净吃按开边编号稳定。
-    const ranked = equivalent.map(group => {
-      const chosen = group.openings.slice().sort((a, b) => a.edge - b.edge)[0]
-      const remains = chosen.endMask !== Board.FULL_MASK
-      const handout = remains
-        ? findStandardHandout(chosen.startMask, group.boxes, state.options.handoutNodeLimit)
-        : { edge: null, gift: 0, take: group.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
-      return { group, chosen, remains, handout, effective: group.value - handout.gift }
-    }).sort((a, b) => a.effective - b.effective || a.chosen.edge - b.chosen.edge)
-    const chosenGroup = ranked[0].group
-    const chosen = ranked[0].chosen
-    const anotherBlockRemains = ranked[0].remains
-    const handout = ranked[0].handout
+    // 以价值优先：等价组不因让多让少改变先后（2026-08-01 用户确认，让多少不参与排序）
+    const chosenGroup = equivalent[0]
+    const chosen = chosenGroup.openings.slice().sort((a, b) => a.edge - b.edge)[0]
+    const anotherBlockRemains = chosen.endMask !== Board.FULL_MASK
+    const handout = anotherBlockRemains
+      ? findStandardHandout(chosen.startMask, chosen.boxes, state.options.handoutNodeLimit)
+      : { edge: null, gift: 0, take: chosen.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
     const meaning = controlMeaning(chosen.value, handout.gift)
     const blockIndex = state.blocks.length
     const allMoves = [chosen.edge, ...chosen.captureMoves]

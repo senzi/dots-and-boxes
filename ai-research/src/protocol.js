@@ -42,12 +42,14 @@
     const shown = state.blocks[displayStep - 1] || null
     const visible = state.blocks.slice(0, displayStep)
     const mask = visible.flatMap(block => block.moves).reduce((value, edge) => Board.put(value, edge), state.frontier)
+    const seqCode = { FORCED_FLIP: 'F', TAKE_ALL: 'T', CHALLENGE_2: 'C', KEEP_BY_2: 'K2', KEEP_BY_4: 'K4' }
     const lines = [
       'D63 VALUE DEBUG v1',
       `protocol=${valueCode(state, seed, displayStep)}`,
       `frontier=${frontierCode(state.frontier)}`,
       `display_block=${displayStep}; computed_blocks=${state.blocks.length}; occupied_edges=${Board.bitCount(mask)}`,
-      `parity=forced_value1:${visible.filter(block => block.value === 1).length}; challenge_value2:${visible.filter(block => block.value === 2).length}; handout0:${visible.filter(block => block.handout === 0).length}`
+      `parity=forced_value1:${visible.filter(block => block.value === 1).length}; challenge_value2:${visible.filter(block => block.value === 2).length}; handout0:${visible.filter(block => block.handout === 0).length}`,
+      `control_seq=${visible.map(block => `${block.label}:${seqCode[block.controlCode] || '?'}`).join(',')}`
     ]
     if (shown) {
       lines.push(`block=${shown.label}; value=${shown.value}; short=${shown.short ? 1 : 0}; handout=${shown.handout}; control_take=${shown.controlTake}; control=${shown.controlCode}`)
