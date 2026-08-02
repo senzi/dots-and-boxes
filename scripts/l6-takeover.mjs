@@ -13,6 +13,7 @@ const THRESHOLD = Number(process.argv[3] || 20)
 const sims = Number(process.argv[4] || 3)
 const seedBase = Number(process.argv[5] || 230000)
 const EXPLORE = Number(process.argv[6] || 10)
+const BONUS = Number(process.argv[7] || 0) // 奇偶加权（0=纯 L5 净胜）
 
 let simCounter = 8000000
 
@@ -65,23 +66,27 @@ function stickChoice(mask, safe) {
   }
   return best
 }
-// 目标奇偶命中率：候选边生长后 v1+v2 奇偶 == target 的比例
-function l6Choose(mask, safe, target) {
+// L6 加权评估：平均净胜（判决器） + BONUS × 目标奇偶命中（v1+v2 奇偶）
+// bonus=0 等价 L5（纯净胜）；bonus>0 奇偶加权
+function l6Choose(mask, safe, player, bonus) {
+  const target = player === 0 ? 1 : 0 // v1+v2 奇数 → 玩家0 控终局（83.4%）
   const nCand = Math.max(5, Math.ceil(safe.length * 0.5))
   const step = Math.max(1, Math.floor(safe.length / nCand))
   const candidates = safe.filter((_, i) => i % step === 0).slice(0, nCand)
   let best = candidates[0], bestScore = -Infinity
   for (const ei of candidates) {
     const mask1 = ARBoard.put(mask, ei)
-    let hit = 0
+    let score = 0
     for (let g = 0; g < sims; g++) {
       const f = growFull(mask1, 9000000 + simCounter++ * 7919)
       const pred = Outcome.outcome(f, 1)
+      const net = player === 0 ? pred.score[0] - pred.score[1] : pred.score[1] - pred.score[0]
       let v12 = 0
       for (const b of pred.blocks) if (b.value === 1 || b.value === 2) v12++
-      if (v12 % 2 === target) hit++
+      const parityHit = v12 % 2 === target ? 1 : 0
+      score += net + bonus * parityHit
     }
-    if (hit / sims > bestScore) { bestScore = hit / sims; best = ei }
+    if (score / sims > bestScore) { bestScore = score / sims; best = ei }
   }
   return best
 }
@@ -97,8 +102,8 @@ function takeover(rewindMask, seed) {
       // 前期贴边（L4 行为）
       mask = ARBoard.put(mask, stickChoice(mask, safe))
     } else {
-      // 临前沿：奇偶控制
-      const pick = player === 0 ? l6Choose(mask, safe, 1) : stickChoice(mask, safe)
+      // 临前沿：L6 加权（净胜 + 奇偶 bonus）
+      const pick = player === 0 ? l6Choose(mask, safe, 0, BONUS) : stickChoice(mask, safe)
       mask = ARBoard.put(mask, pick)
     }
     player = 1 - player
