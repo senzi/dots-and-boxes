@@ -93,7 +93,7 @@
         // 合法的 KEEP_BY_4 / KEEP_BY_2，控制方保持主动权。
         if (![2, 4].includes(gift.length)) continue
         if ([...active].some(box => !giftSet.has(box))) continue
-        if (!Board.connectedBoxes(giftSet, mask)) continue
+        if (!Board.connectedBoxes(giftSet)) continue
         best = betterHandout(best, { edge, gift: gift.length, take: 0, giftBoxes: gift, path: [], exact: true })
       }
 
@@ -125,7 +125,7 @@
     let best = null
     if ([2, 4].includes(directGift.length)) {
       const active0 = new Set(remaining0.filter(box => Board.bitCount(startMask & Board.boxes[box].mask) === 3))
-      if (![...active0].some(box => !directSet.has(box)) && Board.connectedBoxes(directSet, startMask)) {
+      if (![...active0].some(box => !directSet.has(box)) && Board.connectedBoxes(directSet)) {
         best = betterHandout(best, { edge: null, gift: directGift.length, take: 0, giftBoxes: directGift, path: [], exact: true })
       }
     }

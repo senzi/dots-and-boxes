@@ -64,7 +64,9 @@
     return `${human} | ${edge.id} | edge=${edge.index} | ${end}`
   }
 
-  function connectedBoxes(boxSet, maskBefore) {
+  function connectedBoxes(boxSet) {
+    // 格子集合是否通过共享边连通（相邻关系与边是否已填无关，
+    // 2 格链/田字的公共边即使已开仍是连通通道，2026-08-01 修复）
     if (!boxSet.size) return true
     const seen = new Set()
     const stack = [boxSet.values().next().value]
@@ -74,7 +76,7 @@
       seen.add(box)
       for (const edgeIndex of boxes[box].edges) {
         const edge = edges[edgeIndex]
-        if (has(maskBefore, edgeIndex) || edge.boxes.length !== 2) continue
+        if (edge.boxes.length !== 2) continue
         const other = edge.boxes[0] === box ? edge.boxes[1] : edge.boxes[0]
         if (boxSet.has(other) && !seen.has(other)) stack.push(other)
       }
