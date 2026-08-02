@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test:engine": "node scripts/self-test.mjs",
     "test:l3": "node scripts/l3-test.mjs",
-    "benchmark:l3": "node scripts/l3-benchmark.mjs 20"
+    "benchmark:l3": "node scripts/l3-benchmark.mjs 20",
+    "benchmark:l4": "node scripts/l4-benchmark.mjs 20",
+    "selfplay:l4": "node scripts/l4-selfplay.mjs 10"
   },
   "dependencies": {
     "pinia": "^2.2.6",

@@ -6,13 +6,19 @@ import {
   placeEdge, legalMoves, cloneState, edgeId,
   buildTables, EDGE_BOXES, BOX_EDGE_IDS, immediateGainFast, boxFilledCountFast
 } from './board.js'
+import L4Bridge from './l4/l4-bridge.js'
 
 buildTables()
+
+// L4 跨步计划缓存：开块时（安全前沿）用全局预测确定当前块的保权/翻转决策，
+// 后续吃格阶段按计划执行。key 为游戏层的 state 对象（落子原地修改，引用稳定）。
+const l4Plans = new WeakMap()
 
 export const AI_LEVELS = [
   { id: 1, name: '休闲', desc: '新手友好，随机落子、避开陷阱' },
   { id: 2, name: '策略', desc: '普通玩家水平，安全边 + 链分析' },
-  { id: 3, name: '大师', desc: '安全前沿 + 分块控制 + 吃子链搜索' }
+  { id: 3, name: '大师', desc: '安全前沿 + 分块控制 + 吃子链搜索' },
+  { id: 4, name: '宗师', desc: '安全前沿价值块估算 + 终盘预测（L4）' }
 ]
 
 // ---------- 工具 ----------
@@ -882,6 +888,167 @@ export function aiMoveLevel3(state, player, lastMove = null, controlOwner = null
   return best
 }
 
+// ---------- Level 4 宗师 ----------
+// 基于 L3，安全前沿局面用价值块估算决策（ai-research 固化算法）：
+// 分解当前局面 → 先开价值最小的块（试下取最小），等价开边稳定选择。
+// 吃格阶段沿用 L3 的严格 handout 控制计划（留 2/4 保权）。
+export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null) {
+  const moves = legalMoves(state)
+  if (!moves.length) return null
+  const analysis = createL3Analysis()
+
+  const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
+  let controller = controlOwner === 0 || controlOwner === 1 ? controlOwner : player
+  if (player === controller && !captures.length) controller = 1 - player
+  const hasControl = player === controller
+
+  // 1) 有安全边时先取得免费分；无安全边的吃格阶段按价值估算决定留不留/保不保权。
+  if (captures.length) {
+    if (safe.length) return chooseCapture(state, player, captures)
+    if (hasControl) {
+      // L4：按开块时全局预测的计划执行 —— 保权（留 handout）还是翻转（吃光）
+      const plan = l4Plans.get(state)
+      if (plan) {
+        if (plan.choice && plan.choice.includes('保权')) {
+          // 该块应保权：严格 handout 计划（控制方吃 controlTake、让 handout）
+          try {
+            const hPlan = bestControlPlanFull(state, player, analysis)
+            if (hPlan) return hPlan.move
+          } catch (error) {
+            if (error !== SHORT_SEARCH_ABORT) throw error
+          }
+          const degrees = unclaimedDegrees(state)
+          const handouts = handoutMoves(state, moves, degrees)
+          if (handouts.length) {
+            const smallestGift = Math.min(...handouts.map(item => item.gift))
+            return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+          }
+        } else {
+          // 翻转 / 终局：吃光当前块
+          return chooseCapture(state, player, captures)
+        }
+      }
+      // 无计划（意外路径）：回退 L3
+      try {
+        const plan2 = bestControlPlanFull(state, player, analysis)
+        if (plan2) return plan2.move
+      } catch (error) {
+        if (error !== SHORT_SEARCH_ABORT) throw error
+      }
+      const degrees = unclaimedDegrees(state)
+      const handouts = handoutMoves(state, moves, degrees)
+      if (handouts.length) {
+        const smallestGift = Math.min(...handouts.map(item => item.gift))
+        return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+      }
+    }
+    return chooseCapture(state, player, captures)
+  }
+
+  // 2) 安全阶段：绝不主动制造三边格。
+  if (safe.length) return chooseStrategicSafe(state, safe, player, lastMove)
+
+  // 3) 安全前沿：价值块估算 → 开最小价值块（L4 核心）。
+  //    分解当前局面（试下取最小），第一块 = 该开什么；等价开边价值相同，
+  //    稳定选择（edge 字典序）。同时用全局预测确定本块保权/翻转计划。
+  try {
+    const opening = L4Bridge.l4Opening(state)
+    if (opening && opening.openings.length) {
+      const candidates = opening.openings.filter(m => immediateGainFast(state, moveKey(m)) === 0)
+      if (candidates.length) {
+        try {
+          // 安全前沿轮到 player 是开块方（无主动权，用户定义：开块瞬间即无主动权）。
+          // 全局预测以主动权方（吃块决策者）= 1-player 为 firstPlayer。
+          const prediction = L4Bridge.l4Predict(state, 1 - player)
+          if (prediction.tree) {
+            l4Plans.set(state, {
+              controlCode: prediction.blocks[0] ? prediction.blocks[0].controlCode : null,
+              choice: prediction.tree.choice
+            })
+          }
+        } catch (error) {
+          // 预测失败不存计划，吃格阶段回退 L3
+        }
+        candidates.sort((a, b) => moveKey(a).localeCompare(moveKey(b)))
+        return candidates[0]
+      }
+    }
+  } catch (error) {
+    // L4 价值估算异常时静默回退 L3
+  }
+
+  // L3 兜底：短块 minimax → 有权/无权两套开块策略
+  const shortMove = chooseEqualShortOpening(state, player, controller, moves, analysis)
+  if (shortMove) return shortMove
+  const degrees = unclaimedDegrees(state)
+  const components = residualComponents(state, degrees)
+  try {
+    if (!hasControl) {
+      const rows = []
+      for (const move of moves) {
+        const sim = cloneState(state)
+        placeEdge(sim, move.dir, move.r, move.c, player)
+        rows.push({ move, openingValue: forcedCaptureCostExact(sim, analysis), state: sim })
+      }
+      const minimum = Math.min(...rows.map(row => row.openingValue))
+      let best = null
+      let bestRank = null
+      for (const row of rows) {
+        if (row.openingValue !== minimum) continue
+        const plan = bestControlPlanFull(row.state, 1 - player, analysis)
+        const controlBreak = plan ? 0 : 1
+        const controllerUtility = plan ? plan.utility : row.openingValue
+        const giftBack = plan ? plan.gift : 0
+        const pressure = controllerUtility - (controlBreak ? 8 : 0)
+        const rank = [pressure, -giftBack, controllerUtility, moveKey(row.move)]
+        if (rankLess(rank, bestRank)) { best = row.move; bestRank = rank }
+      }
+      if (best) return best
+    } else {
+      const rows = []
+      for (const move of moves) {
+        const sim = cloneState(state)
+        placeEdge(sim, move.dir, move.r, move.c, player)
+        rows.push({ move, gift: forcedCaptureCostExact(sim, analysis) })
+      }
+      const minimum = Math.min(...rows.map(row => row.gift))
+      let best = null
+      let bestRank = null
+      for (const row of rows) {
+        if (row.gift !== minimum) continue
+        const forecast = openingForecastFull(state, row.move, 1 - player, analysis)
+        const size = componentSizeForMove(row.move, components)
+        const danger = moveDanger(state, row.move.dir, row.move.r, row.move.c, player)
+        const rank = [forecast.receiverMargin, forecast.residualUnits, size, danger, moveKey(row.move)]
+        if (rankLess(rank, bestRank)) { best = row.move; bestRank = rank }
+      }
+      if (best) return best
+    }
+  } catch (error) {
+    if (error !== SHORT_SEARCH_ABORT) throw error
+  }
+
+  // 最坏情况下的低成本确定性回退。
+  const seed = stateHash(state)
+  let best = null
+  let bestRank = null
+  for (const move of moves) {
+    const size = componentSizeForMove(move, components)
+    const danger = moveDanger(state, move.dir, move.r, move.c, player)
+    const rank = [size, danger, stableMoveHash(seed, move)]
+    if (
+      bestRank === null || rank[0] < bestRank[0] ||
+      (rank[0] === bestRank[0] && rank[1] < bestRank[1]) ||
+      (rank[0] === bestRank[0] && rank[1] === bestRank[1] && rank[2] > bestRank[2])
+    ) {
+      best = move
+      bestRank = rank
+    }
+  }
+  return best
+}
+
 // 游戏层在落子前调用，用于维护策略所需的“主动权归属”。它不修改 state。
 export function l3ControlAfterMove(state, move, player, controlOwner = null) {
   const moves = legalMoves(state)
@@ -900,9 +1067,11 @@ export function l3ControlAfterMove(state, move, player, controlOwner = null) {
 export function getAiMove(level, state, player, lastMove = null, controlOwner = null) {
   if (level === 1) return aiMoveLevel1(state, player)
   if (level === 3) return aiMoveLevel3(state, player, lastMove, controlOwner)
+  if (level === 4) return aiMoveLevel4(state, player, lastMove, controlOwner)
   return aiMoveLevel2(state, player)
 }
 
 export function aiMoveDelay(level) {
+  if (level === 4) return 120
   return level === 3 ? 220 : 350
 }
