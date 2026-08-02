@@ -8,6 +8,9 @@
   if (!Board && typeof require === 'function') Board = require('./board.js')
 
   function captureClosure(startMask, allowedBoxes) {
+    // 机械闭包：开边后反复吃掉所有可得分边，直到无可得分边。
+    // 价值判断的"试下"指不同开边之间取最小（2026-08-01 用户确认）；
+    // 吃边顺序分支不做最小化（例如田字内边被开，连锁吞并邻块就是闭包结果）。
     let mask = startMask
     const moves = []
     const claimed = new Set()
@@ -171,15 +174,20 @@
     const handout = anotherBlockRemains
       ? findStandardHandout(chosen.startMask, chosen.boxes, state.options.handoutNodeLimit)
       : { edge: null, gift: 0, take: chosen.value, giftBoxes: [], path: [], exact: true, nodes: 0 }
-    const meaning = controlMeaning(chosen.value, handout.gift)
+    // 最后一块是终局：吃光即游戏结束，不存在"转移主动权"，不计控制事件（2026-08-01）
+    const meaning = anotherBlockRemains
+      ? controlMeaning(chosen.value, handout.gift)
+      : { code: 'GAME_END', label: '终局', parity: 0 }
     const blockIndex = state.blocks.length
     const allMoves = [chosen.edge, ...chosen.captureMoves]
     for (const edge of allMoves) state.edgeOwners.set(edge, blockIndex)
     for (const box of chosen.boxes) state.boxBlock[box] = blockIndex
     state.mask = chosen.endMask
-    state.parity.forcedFlips += meaning.code === 'FORCED_FLIP' ? 1 : 0
-    state.parity.challengeTwos += meaning.code === 'CHALLENGE_2' ? 1 : 0
-    state.parity.takeAll += meaning.code === 'TAKE_ALL' ? 1 : 0
+    if (meaning.code !== 'GAME_END') {
+      state.parity.forcedFlips += meaning.code === 'FORCED_FLIP' ? 1 : 0
+      state.parity.challengeTwos += meaning.code === 'CHALLENGE_2' ? 1 : 0
+      state.parity.takeAll += meaning.code === 'TAKE_ALL' ? 1 : 0
+    }
     const block = {
       index: blockIndex,
       label: String.fromCharCode(65 + blockIndex % 26) + (blockIndex >= 26 ? Math.floor(blockIndex / 26) + 1 : ''),

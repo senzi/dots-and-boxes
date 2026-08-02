@@ -69,9 +69,9 @@
     $('handouts').textContent = `${blocks.filter(b=>b.handout===2).length} / ${blocks.filter(b=>b.handout===4).length} / ${blocks.filter(b=>b.handout===0).length}`
     $('progress').textContent = state.complete ? `${step}/${state.blocks.length} · 完成` : `${step}/${state.blocks.length} · 按需`
     // 控制权转移序列：按时间（消解顺序）逐块标记 必然/可能/不转移
-    const seqText = { FORCED_FLIP: '必然转移', TAKE_ALL: '必然转移', CHALLENGE_2: '可能转移', KEEP_BY_2: '保权·不转移', KEEP_BY_4: '保权·不转移' }
+    const seqText = { FORCED_FLIP: '必然转移', TAKE_ALL: '必然转移', CHALLENGE_2: '可能转移', KEEP_BY_2: '保权·不转移', KEEP_BY_4: '保权·不转移', GAME_END: '终局' }
     $('controlSeq').innerHTML = blocks.length ? blocks.map((b, i) => {
-      const cls = b.controlCode === 'FORCED_FLIP' || b.controlCode === 'TAKE_ALL' ? 'force' : b.controlCode === 'CHALLENGE_2' ? 'maybe' : 'keep'
+      const cls = b.controlCode === 'GAME_END' ? 'end' : b.controlCode === 'FORCED_FLIP' || b.controlCode === 'TAKE_ALL' ? 'force' : b.controlCode === 'CHALLENGE_2' ? 'maybe' : 'keep'
       return `<div class="seq-row ${cls}"><span class="seq-idx">${String(i + 1).padStart(2)}</span><b>${b.label}</b><span>${seqText[b.controlCode] || b.controlCode}</span><span>让${b.handout}</span></div>`
     }).join('') : '<p>逐步计算后显示。</p>'
     // 全盘价值轨迹：倒序（最新在最上），并随回撤步数缩短

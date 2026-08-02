@@ -42,7 +42,7 @@
     const shown = state.blocks[displayStep - 1] || null
     const visible = state.blocks.slice(0, displayStep)
     const mask = visible.flatMap(block => block.moves).reduce((value, edge) => Board.put(value, edge), state.frontier)
-    const seqCode = { FORCED_FLIP: 'F', TAKE_ALL: 'T', CHALLENGE_2: 'C', KEEP_BY_2: 'K2', KEEP_BY_4: 'K4' }
+    const seqCode = { FORCED_FLIP: 'F', TAKE_ALL: 'T', CHALLENGE_2: 'C', KEEP_BY_2: 'K2', KEEP_BY_4: 'K4', GAME_END: 'E' }
     const lines = [
       'D63 VALUE DEBUG v1',
       `protocol=${valueCode(state, seed, displayStep)}`,
