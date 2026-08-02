@@ -78,7 +78,7 @@ function resultBadge(rec) {
         v-for="(r, i) in history.recent" :key="i"
         class="card row gap-16 rec-row" @click="open(r)"
       >
-        <div class="col" style="width: 118px; flex-shrink: 0; text-align: left">
+        <div class="col" style="width: 148px; flex-shrink: 0; text-align: left">
           <span class="badge">{{ modeLabel(r.mode) }}<template v-if="r.aiLevel"> · {{ aiName(r.aiLevel) }}</template></span>
           <span class="caption muted mt-8" style="text-transform: none; letter-spacing: 0">{{ fmtTime(r.date) }}</span>
         </div>

@@ -181,6 +181,7 @@ html, body {
 .badge {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   background: var(--surface-strong);
   color: var(--ink);
   font-size: 12px;
