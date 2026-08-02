@@ -11,15 +11,23 @@ const THRESHOLD = Number(process.argv[3] || 20)
 const sims = Number(process.argv[4] || 3)
 const maxCandidates = 6
 const seedBase = Number(process.argv[5] || 110000)
+// 动态参数开关：1 = 用用户方案（候选=50%↑最小5，sims≥3且乘积<预算）
+const DYNAMIC = Number(process.argv[6] || 0)
+const BUDGET = Number(process.argv[7] || 40) // sims×候选数 上限
+// 探索步数（评估时先模拟 N 步贴边策略下子，再终盘随机补全；0 = 直接随机补全）
+const EXPLORE = Number(process.argv[8] || 0)
 
 function growFull(mask, rngSeed, style = 'stick') {
   const rng = Frontier.mulberry32(rngSeed)
   let lastMove = null
+  let step = 0
   while (true) {
     const safe = ARBoard.legal(mask).filter(i => ARBoard.danger(mask, i) === 0)
     if (!safe.length) return mask
     let choices = safe
-    if (style === 'stick' && lastMove != null) {
+    // 探索阶段（前 EXPLORE 步）：贴边风格（模拟双方策略下子）；之后终盘随机
+    const inExplore = EXPLORE > 0 && step < EXPLORE
+    if (inExplore && style === 'stick' && lastMove != null) {
       const prior = ARBoard.edges[lastMove]
       const endpoints = e => e.dir === 'H' ? [[e.c, e.r], [e.c + 1, e.r]] : [[e.c, e.r], [e.c, e.r + 1]]
       const touches = safe.filter(index => {
@@ -30,6 +38,7 @@ function growFull(mask, rngSeed, style = 'stick') {
     }
     lastMove = choices[Math.floor(rng() * choices.length)]
     mask = ARBoard.put(mask, lastMove)
+    step++
   }
 }
 
@@ -68,20 +77,23 @@ function stickChoice(mask, safe) {
 
 let simCounter = 2000000
 // L5 接管安全阶段：剩 ≤THRESHOLD 安全边前瞻选边；否则贴边
+// 动态参数（DYNAMIC=1）：候选 = 安全边数 50% 向上取整最小5；sims≥3 且 sims×候选<BUDGET
 function l5TakeoverStep(mask, safe, player) {
   if (safe.length > THRESHOLD) return stickChoice(mask, safe)
-  const step = Math.max(1, Math.floor(safe.length / maxCandidates))
-  const candidates = safe.filter((_, i) => i % step === 0).slice(0, maxCandidates)
+  const nCand = DYNAMIC ? Math.max(5, Math.ceil(safe.length * 0.5)) : maxCandidates
+  const nSims = DYNAMIC ? Math.max(3, Math.floor(BUDGET / nCand)) : sims
+  const step = Math.max(1, Math.floor(safe.length / nCand))
+  const candidates = safe.filter((_, i) => i % step === 0).slice(0, nCand)
   let best = candidates[0], bestNet = -Infinity
   for (const ei of candidates) {
     const mask1 = ARBoard.put(mask, ei)
     let net = 0
-    for (let g = 0; g < sims; g++) {
+    for (let g = 0; g < nSims; g++) {
       const f = growFull(mask1, 9000000 + simCounter++ * 7919)
       const pred = Outcome.outcome(f, 1)
       net += player === 0 ? pred.score[0] - pred.score[1] : pred.score[1] - pred.score[0]
     }
-    const avgNet = net / sims
+    const avgNet = net / nSims
     if (avgNet > bestNet) { bestNet = avgNet; best = ei }
   }
   return best
