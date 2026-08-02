@@ -900,6 +900,12 @@ export function aiMoveLevel3(state, player, lastMove = null, controlOwner = null
 // 分解当前局面 → 先开价值最小的块（试下取最小），等价开边稳定选择。
 // 吃格阶段沿用 L3 的严格 handout 控制计划（留 2/4 保权）。
 export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null) {
+  return aiMoveLevel4With(state, player, lastMove, controlOwner, null)
+}
+
+// L4 核心流程（L5 研究版复用）：safeChooser 覆盖安全阶段决策
+// （默认 chooseStrategicSafe 贴边；L5 传前瞻评估器）
+export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = null, safeChooser = null) {
   const moves = legalMoves(state)
   if (!moves.length) return null
   const analysis = createL3Analysis()
@@ -954,7 +960,13 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
   }
 
   // 2) 安全阶段：绝不主动制造三边格。
-  if (safe.length) return chooseStrategicSafe(state, safe, player, lastMove)
+  if (safe.length) {
+    if (safeChooser) {
+      const chosen = safeChooser(state, safe, player, lastMove)
+      if (chosen) return chosen
+    }
+    return chooseStrategicSafe(state, safe, player, lastMove)
+  }
 
   // 3) 安全前沿：价值块估算 → 开最小价值块（L4 核心，任意尺寸）。
   //    分解当前局面（试下取最小），第一块 = 该开什么；等价开边价值相同，
