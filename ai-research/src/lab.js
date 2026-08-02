@@ -1,6 +1,6 @@
 (function () {
   'use strict'
-  const { Board, Frontier, ValueBot, Protocol } = D63
+  const { Board, Frontier, ValueBot, Protocol, Outcome } = D63
   const palette = ['#34d6c7','#ff826d','#68a7ff','#c89cff','#f2cb66','#55d886','#ff9fc5','#9aa7ff']
   const $ = id => document.getElementById(id)
   const canvas = $('board'), ctx = canvas.getContext('2d')
@@ -68,11 +68,18 @@
     $('twoParity').textContent = `${twos}（${twos % 2 ? '奇' : '偶'}）`
     $('handouts').textContent = `${blocks.filter(b=>b.handout===2).length} / ${blocks.filter(b=>b.handout===4).length} / ${blocks.filter(b=>b.handout===0).length}`
     $('progress').textContent = state.complete ? `${step}/${state.blocks.length} · 完成` : `${step}/${state.blocks.length} · 按需`
-    // 控制权转移序列：按时间（消解顺序）逐块标记 必然/可能/不转移
+    // 预期终盘比分（先手 = 玩家 0 开块）
+    try {
+      const res = Outcome.outcome(state.frontier, 0)
+      const who = res.winner === -1 ? '平局' : res.winner === 0 ? '先手胜' : '后手胜'
+      $('outcome').innerHTML = `<span style="color:var(--a)">先手 ${res.score[0]}</span> : <span style="color:var(--b)">${res.score[1]} 后手</span> <span style="color:var(--gold)">· ${who}</span>`
+    } catch (error) { $('outcome').textContent = '—' }
+    // 控制权转移序列：倒序（最新在最上），并随回撤步数缩短
     const seqText = { FORCED_FLIP: '必然转移', TAKE_ALL: '必然转移', CHALLENGE_2: '可能转移', KEEP_BY_2: '保权·不转移', KEEP_BY_4: '保权·不转移', GAME_END: '终局' }
-    $('controlSeq').innerHTML = blocks.length ? blocks.map((b, i) => {
+    const seqBlocks = blocks.slice().reverse()
+    $('controlSeq').innerHTML = seqBlocks.length ? seqBlocks.map((b, i) => {
       const cls = b.controlCode === 'GAME_END' ? 'end' : b.controlCode === 'FORCED_FLIP' || b.controlCode === 'TAKE_ALL' ? 'force' : b.controlCode === 'CHALLENGE_2' ? 'maybe' : 'keep'
-      return `<div class="seq-row ${cls}"><span class="seq-idx">${String(i + 1).padStart(2)}</span><b>${b.label}</b><span>${seqText[b.controlCode] || b.controlCode}</span><span>让${b.handout}</span></div>`
+      return `<div class="seq-row ${cls}"><span class="seq-idx">${String(blocks.length - i).padStart(2)}</span><b>${b.label}</b><span>${seqText[b.controlCode] || b.controlCode}</span><span>让${b.handout}</span></div>`
     }).join('') : '<p>逐步计算后显示。</p>'
     // 全盘价值轨迹：倒序（最新在最上），并随回撤步数缩短
     const trail = blocks.slice().reverse()
