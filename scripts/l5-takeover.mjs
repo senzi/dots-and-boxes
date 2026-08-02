@@ -116,6 +116,7 @@ function takeover(rewindMask, seed) {
 
 let total = 0, flipped = 0, improved = 0
 const samples = []
+const t0 = Date.now()
 for (let i = 0; i < count; i++) {
   const seed = seedBase + i
   const frontier = Frontier.generate(seed)
@@ -131,6 +132,7 @@ for (let i = 0; i < count; i++) {
 }
 
 console.log(`=== L5 接管翻盘率（${count} 生成 · ${total} 个 L4 败局 · 阈值${THRESHOLD} · sims${sims}） ===`)
+console.log(`总耗时 ${((Date.now() - t0) / 1000).toFixed(0)}s · 每败局 ${total ? ((Date.now() - t0) / 1000 / total).toFixed(1) : 0}s`)
 console.log(`翻盘（败→胜）: ${flipped}/${total}（${(flipped / total * 100).toFixed(1)}%）`)
 console.log(`比分改善: ${improved}/${total}（${(improved / total * 100).toFixed(1)}%）`)
 console.log(`样例:`)
