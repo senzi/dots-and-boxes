@@ -47,7 +47,8 @@
   }
 
   // 从后向前 DP：控制方 c 在当前块选择最大化自己（c）的总收益
-  function solve(blocks, firstPlayer) {
+  // forceKeep：块索引集合，强制这些块选"保权"选项（探索用，验证主动让权是否该让）
+  function solve(blocks, firstPlayer, forceKeep) {
     const n = blocks.length
     const memo = new Map()
     function rec(i, c) {
@@ -57,6 +58,7 @@
       const block = blocks[i]
       let best = null
       for (const opt of optionSet(block, c)) {
+        if (forceKeep && forceKeep.has(i) && !opt.label.includes('保权')) continue
         const sub = rec(i + 1, opt.next)
         const cTotal = opt.take + (opt.next === c ? sub[0] : sub[1])
         const oppTotal = opt.give + (opt.next === c ? sub[1] : sub[0])
@@ -71,10 +73,11 @@
     return rec(0, firstPlayer)
   }
 
-  // 终盘收益与胜负：frontier = 安全前沿 mask，firstPlayer = 轮到谁开块（0/1）
+  // 终盘收益与胜负：frontier = 安全前沿 mask，firstPlayer = 主动权方（吃块决策者，0/1）
+  // options.forceKeep = Set<块索引>：强制保权（探索用）
   function outcome(frontier, firstPlayer, options) {
     const blocks = decompose(frontier, options)
-    const [cGain, oppGain, tree] = solve(blocks, firstPlayer)
+    const [cGain, oppGain, tree] = solve(blocks, firstPlayer, options && options.forceKeep)
     return {
       blocks,
       firstPlayer,

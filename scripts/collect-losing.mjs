@@ -21,6 +21,18 @@ function decisionLabel(choice) {
   return choice ? choice.replace(/·/g, '') : '?'
 }
 
+// 每块权属标记：
+//   keep      = 保权（DP 选保权·让X / 让2·保权）—— 主动权保持
+//   activeGive = 主动让权（能保权【handoutEdge 非 null】却选翻转）—— 主动放弃主动权
+//   forced    = 被迫翻转（值1 FORCED_FLIP / TAKE_ALL / handoutEdge null 无法保权）
+function flagFor(block, choice) {
+  if (!choice) return 'forced'
+  if (choice.includes('保权')) return 'keep'
+  if (block.controlCode === 'FORCED_FLIP' || block.controlCode === 'TAKE_ALL') return 'forced'
+  if (block.handoutEdge === null) return 'forced'
+  return 'activeGive'
+}
+
 const fd = fs.openSync(outFile, 'w')
 let loseCount = 0
 let winCount = 0
@@ -36,21 +48,25 @@ for (let i = 0; i < count; i++) {
   else if (result === 'win') winCount++
   else drawCount++
 
-  // 双序列
+  // 双序列 + 权属标记
   const valueSeq = [] // 值/决策/净收
   const controlSeq = [] // 每块控制方
+  const flags = [] // keep / activeGive / forced
   let node = pred.tree
+  const blocksInfo = []
   for (const b of pred.blocks) {
-    const c = node ? (node.next === undefined ? null : null) : null
-    valueSeq.push(`${b.value}/${decisionLabel(node ? node.choice : null)}/${node ? node.take - node.give : 0}`)
+    const choice = node ? node.choice : null
+    valueSeq.push(`${b.value}/${decisionLabel(choice)}/${node ? node.take - node.give : 0}`)
+    blocksInfo.push({ code: b.controlCode, handoutEdge: b.handoutEdge, value: b.value })
     node = node && node.sub
   }
   // 控制方流转：从 firstPlayer=1 开始，逐块 next
   let c = 1
   const ctrl = []
   node = pred.tree
-  for (const b of pred.blocks) {
+  for (let i = 0; i < pred.blocks.length; i++) {
     ctrl.push(c)
+    flags.push(flagFor(blocksInfo[i], node ? node.choice : null))
     if (node) { c = node.next; node = node.sub }
   }
   controlSeq.push(...ctrl.map(x => String(x)))
@@ -63,6 +79,7 @@ for (let i = 0; i < count; i++) {
     predScore: [p0, p1],
     valueSeq,
     controlSeq,
+    flags,
     valuePlain: pred.blocks.map(b => b.value).join(','),
     controlPlain: ctrl.join('')
   }
