@@ -35,6 +35,68 @@ function discardSave() {
   hasSave.value = false
 }
 
+// ---- 管理员模式（暗号：连点 10 次"人机对战"） ----
+const ADMIN_KEY = 'dnb63_admin_v1'
+const DEBUG_KEY = 'dnb63_debug_v1'
+const admin = ref(false)
+const adminClicks = ref(0)
+const debugRecords = ref([])
+const copied = ref(false)
+onMounted(() => {
+  admin.value = localStorage.getItem(ADMIN_KEY) === '1'
+  if (admin.value) loadDebug()
+})
+// 模式卡点击：仅"人机对战"计入暗号计数
+function clickMode(id) {
+  mode.value = id
+  if (id !== 'ai') return
+  adminClicks.value++
+  if (!admin.value && adminClicks.value >= 10) {
+    admin.value = true
+    try { localStorage.setItem(ADMIN_KEY, '1') } catch (e) { /* ignore */ }
+    loadDebug()
+  }
+}
+function loadDebug() {
+  try {
+    debugRecords.value = JSON.parse(localStorage.getItem(DEBUG_KEY) || '[]')
+  } catch { debugRecords.value = [] }
+}
+// 组装复盘文本（与 Game.vue 控制台格式一致）
+function replayText(rec) {
+  const lines = []
+  lines.push('==============================================')
+  lines.push(`复盘 · 你赢了 ${rec.aiName} L${rec.level}`)
+  lines.push(`${rec.boardLabel} · 你 ${rec.score[0]} : AI ${rec.score[1]}`)
+  lines.push('落子序列（P0=你 P1=AI，可空棋盘按序重走）:')
+  rec.moves.forEach((m, i) => {
+    const n = String(i + 1).padStart(3, '0')
+    lines.push(`  ${n}. P${m.player} ${m.dir}-${m.r}-${m.c}`)
+  })
+  lines.push('==============================================')
+  return lines.join('\n')
+}
+async function copyRecord(rec) {
+  try {
+    await navigator.clipboard.writeText(replayText(rec))
+    copied.value = rec.time
+    setTimeout(() => { copied.value = false }, 1200)
+  } catch (e) { /* 剪贴板不可用 */ }
+}
+async function copyAll() {
+  try {
+    const text = debugRecords.value.map((r, i) => `【记录 ${i + 1}】\n${replayText(r)}`).join('\n\n')
+    await navigator.clipboard.writeText(text)
+    copied.value = 'all'
+    setTimeout(() => { copied.value = false }, 1200)
+  } catch (e) { /* 剪贴板不可用 */ }
+}
+function fmtTime(t) {
+  const d = new Date(t)
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 function start() {
   let players
   if (mode.value === 'ai') {
@@ -82,11 +144,38 @@ function start() {
           v-for="m in MODES" :key="m.id"
           class="mode-card"
           :class="{ active: mode === m.id }"
-          @click="mode = m.id"
+          @click="clickMode(m.id)"
         >
           <span class="display-sm">{{ m.label }}</span>
           <span class="body-sm muted">{{ m.desc }}</span>
         </button>
+      </div>
+    </div>
+
+    <!-- 管理员模式：调试记录 -->
+    <div v-if="admin" class="admin-panel mt-32 fade-up">
+      <div class="caption">调试记录（管理员）</div>
+      <div class="row gap-12 mt-8" style="justify-content: space-between">
+        <span class="body-sm muted">{{ debugRecords.length }} 条 · 自动缓存最近 20 条 · 仅 L4/L5 人类胜</span>
+        <button v-if="debugRecords.length" class="btn btn-outline btn-sm" @click="copyAll">
+          {{ copied === 'all' ? '已复制' : '全部复制' }}
+        </button>
+      </div>
+      <div v-if="!debugRecords.length" class="card-soft mt-12 p-16">
+        <span class="body-sm muted">暂无记录 —— 去赢一局 L4 或 L5，复盘会自动缓存到这里。</span>
+      </div>
+      <div v-else class="debug-list mt-12">
+        <div v-for="rec in debugRecords" :key="rec.time" class="card-soft debug-item">
+          <div class="row gap-12" style="align-items: center">
+            <span class="body-sm mono">{{ fmtTime(rec.time) }}</span>
+            <span class="badge">{{ rec.aiName }} L{{ rec.level }}</span>
+            <span class="body-sm muted flex-1">{{ rec.boardLabel }} · 你 {{ rec.score[0] }} : AI {{ rec.score[1] }}</span>
+            <button class="btn btn-outline btn-sm" @click="copyRecord(rec)">
+              {{ copied === rec.time ? '已复制' : '复制' }}
+            </button>
+          </div>
+          <div class="body-xs mono muted mt-8 debug-moves">{{ rec.moves.map(m => `P${m.player} ${m.dir}-${m.r}-${m.c}`).join(' · ') }}</div>
+        </div>
       </div>
     </div>
 
@@ -213,4 +302,23 @@ function start() {
 @media (max-width: 640px) {
   .hero { padding-top: 16px; }
 }
+
+/* 管理员模式：调试记录 */
+.admin-panel {
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--r-xl);
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.debug-item { padding: 12px 14px; }
+.debug-moves {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.mono { font-family: var(--font-mono, ui-monospace, Consolas, monospace); }
+.flex-1 { flex: 1; min-width: 0; }
+.p-16 { padding: 16px; }
+.btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 8px; }
 </style>

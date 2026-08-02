@@ -65,7 +65,27 @@ watch(() => game.over, (v) => {
 })
 
 // 控制台复盘文本：难度 + 比分 + 完整落子序列（可在空棋盘按序列重走）
+// 同时无条件缓存到浏览器（管理员模式可查看/复制）
+const DEBUG_KEY = 'dnb63_debug_v1'
+function cacheDebugRecord(humanScore, aiScore) {
+  const lv = AI_LEVELS.find(l => l.id === game.aiLevel)
+  const record = {
+    time: Date.now(),
+    level: game.aiLevel,
+    aiName: lv ? lv.name : `L${game.aiLevel}`,
+    boardLabel: game.boardLabel,
+    score: [humanScore, aiScore],
+    moves: game.moveLog.map(m => ({ ...m }))
+  }
+  try {
+    const list = JSON.parse(localStorage.getItem(DEBUG_KEY) || '[]')
+    list.unshift(record)
+    if (list.length > 20) list.length = 20
+    localStorage.setItem(DEBUG_KEY, JSON.stringify(list))
+  } catch (e) { /* localStorage 不可用时静默 */ }
+}
 function printReplay(humanScore, aiScore) {
+  cacheDebugRecord(humanScore, aiScore)
   const lv = AI_LEVELS.find(l => l.id === game.aiLevel)
   const aiName = lv ? `${lv.name} L${lv.id}` : `L${game.aiLevel}`
   const boardLabel = game.boardLabel
