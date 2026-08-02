@@ -1049,6 +1049,80 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
   return best
 }
 
+// ---------- Level 5（研究用，不显示在 UI）----------
+// 规则（用户定义）：
+//   1. 能拿主动权就拿，拿了之后不管什么情况都不放弃主动权（吃块恒保权）
+//   2. 安全前沿步骤，安全步能远离上一手就远离
+export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null) {
+  const moves = legalMoves(state)
+  if (!moves.length) return null
+  const analysis = createL3Analysis()
+
+  const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
+  const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
+
+  // 1) 吃格阶段：恒保权 —— 能留 2/4 就留，绝不主动吃光放弃主动权
+  if (captures.length) {
+    if (safe.length) return chooseCapture(state, player, captures)
+    try {
+      const plan = bestControlPlanFull(state, player, analysis)
+      if (plan) return plan.move
+    } catch (error) {
+      if (error !== SHORT_SEARCH_ABORT) throw error
+    }
+    const degrees = unclaimedDegrees(state)
+    const handouts = handoutMoves(state, moves, degrees)
+    if (handouts.length) {
+      const smallestGift = Math.min(...handouts.map(item => item.gift))
+      return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+    }
+    return chooseCapture(state, player, captures)
+  }
+
+  // 2) 安全阶段：能远离上一手就远离
+  if (safe.length) {
+    if (!lastMove) return chooseStrategicSafe(state, safe, player, lastMove)
+    let best = null
+    let bestDist = -1
+    for (const move of safe) {
+      const d = edgeDistance(move, lastMove)
+      if (d > bestDist) { bestDist = d; best = move }
+    }
+    return best
+  }
+
+  // 3) 安全前沿：开最小残余块（L3 组件排序），后续吃块时按规则 1 恒保权
+  const degrees = unclaimedDegrees(state)
+  const components = residualComponents(state, degrees)
+  const seed = stateHash(state)
+  let best = null
+  let bestRank = null
+  for (const move of moves) {
+    const size = componentSizeForMove(move, components)
+    const danger = moveDanger(state, move.dir, move.r, move.c, player)
+    const rank = [size, danger, stableMoveHash(seed, move)]
+    if (
+      bestRank === null || rank[0] < bestRank[0] ||
+      (rank[0] === bestRank[0] && rank[1] < bestRank[1]) ||
+      (rank[0] === bestRank[0] && rank[1] === bestRank[1] && rank[2] > bestRank[2])
+    ) {
+      best = move
+      bestRank = rank
+    }
+  }
+  return best
+}
+
+// 边 → 中点（用于"远离上一手"距离计算）
+function edgeMidpoint(move) {
+  return move.dir === 'H' ? { x: move.c + 0.5, y: move.r } : { x: move.c, y: move.r + 0.5 }
+}
+function edgeDistance(a, b) {
+  const p = edgeMidpoint(a)
+  const q = edgeMidpoint(b)
+  return Math.hypot(p.x - q.x, p.y - q.y)
+}
+
 // 游戏层在落子前调用，用于维护策略所需的“主动权归属”。它不修改 state。
 export function l3ControlAfterMove(state, move, player, controlOwner = null) {
   const moves = legalMoves(state)
