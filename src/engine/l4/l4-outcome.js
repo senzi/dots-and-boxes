@@ -10,24 +10,30 @@ function decompose(board, frontier, options) {
 
 // 每个块，控制方 c（开块方）的可选策略：
 //   take = 控制方吃格数，give = 对手吃格数，next = 下一块控制方
+// 保权前提：标准让块边存在（handoutEdge 非 null）。开边直接让（handoutEdge=null）
+// 时，实际 l3ControlAfterMove 判定非 handout 边 → 控制权翻转（2026-08-02 实测根因）。
 function optionSet(block, c) {
   switch (block.controlCode) {
     case 'GAME_END':
       return [{ take: block.value, give: 0, next: c, label: '终局吃光' }]
     case 'KEEP_BY_2':
-    case 'KEEP_BY_4':
-      // 保权：控制方吃 controlTake，让 handout 给对手，主动权保持
+    case 'KEEP_BY_4': {
+      const keeps = block.handoutEdge !== null
+      // 保权：控制方吃 controlTake，让 handout 给对手，主动权保持（仅标准让块）
       // 翻转：控制方全吃 value，主动权交给对手
       return [
-        { take: block.controlTake, give: block.handout, next: c, label: `保权·让${block.handout}` },
+        { take: block.controlTake, give: block.handout, next: keeps ? c : 1 - c, label: keeps ? `保权·让${block.handout}` : `让${block.handout}·翻转` },
         { take: block.value, give: 0, next: 1 - c, label: '全吃·翻转' }
       ]
-    case 'CHALLENGE_2':
-      // 争权：控制方吃 2 翻转，或让 2 保权
+    }
+    case 'CHALLENGE_2': {
+      const keeps = block.handoutEdge !== null
+      // 争权：吃 2 翻转；让 2（仅标准让块才保权，否则实际翻转）
       return [
         { take: block.value, give: 0, next: 1 - c, label: '吃2·翻转' },
-        { take: 0, give: block.value, next: c, label: '让2·保权' }
+        { take: 0, give: block.value, next: keeps ? c : 1 - c, label: keeps ? '让2·保权' : '让2·翻转' }
       ]
+    }
     default: // FORCED_FLIP / TAKE_ALL：无选择，吃光翻转
       return [{ take: block.value, give: 0, next: 1 - c, label: '吃光·翻转' }]
   }

@@ -1,8 +1,11 @@
 // 探索 3：快速预测 vs 实际自战对比（8×8）
 // 同一安全前沿局面：outcome 快速预测 vs 主项目 L4 双席位实际打完
 // 主视角 = 安全前沿第一个开块的人（= 玩家 0 先走）
-// node scripts/predict-vs-selfplay.mjs [局数]
+// 自战结果缓存到 explore/data/selfplay-cache.jsonl（L4 改动后需清缓存）
+// node scripts/predict-vs-selfplay.mjs [局数] [起始seed]
 import { createRequire } from 'node:module'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createBoard, placeEdge, isGameOver, scores, setBoardSize } from '../src/engine/board.js'
 import { aiMoveLevel4, l3ControlAfterMove } from '../src/engine/ai.js'
 
@@ -13,8 +16,19 @@ const Outcome = require('../ai-research/src/outcome.js')
 
 setBoardSize('s8')
 const games = Number(process.argv[2] || 50)
+const seedBase = Number(process.argv[3] || 1000)
+const CACHE_FILE = path.resolve('ai-research/explore/data/selfplay-cache.jsonl')
+fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true })
 
-// ai-research mask → 主项目 state（已填边 owner=0；安全前沿无完成格，比分从 0:0 起）
+// 自战结果缓存：frontier 码 → { score }
+const cache = new Map()
+if (fs.existsSync(CACHE_FILE)) {
+  for (const line of fs.readFileSync(CACHE_FILE, 'utf8').split('\n').filter(Boolean)) {
+    try { const row = JSON.parse(line); cache.set(row.frontier, row.score) } catch (e) { /* 跳过坏行 */ }
+  }
+}
+console.log(`缓存命中 ${cache.size} 个局面`)
+
 function maskToState(mask) {
   const state = createBoard()
   for (const e of ARBoard.edges) {
@@ -23,7 +37,6 @@ function maskToState(mask) {
   return state
 }
 
-// 实际自战：主视角（玩家 0）先开块，双方都是 L4
 function selfplay(mask) {
   const state = maskToState(mask)
   let player = 0
@@ -42,27 +55,36 @@ function selfplay(mask) {
   return scores(state)
 }
 
+function selfplayCached(mask) {
+  const code = `D63F1.${mask.toString(36)}`
+  const hit = cache.get(code)
+  if (hit) return hit
+  const score = selfplay(mask)
+  cache.set(code, score)
+  fs.appendFileSync(CACHE_FILE, JSON.stringify({ frontier: code, score, ts: Date.now() }) + '\n')
+  return score
+}
+
 let agree = 0
-let sameWinner = 0
 const diff = []
 const cases = []
 for (let g = 0; g < games; g++) {
-  const mask = Frontier.generate(1000 + g)
+  const mask = Frontier.generate(seedBase + g)
   // 快速预测：主视角（玩家 0）先开块 = 无主动权方（用户定义：开块瞬间即无主动权），
   // 主动权方（吃块决策者）= 玩家 1 → firstPlayer = 1。score 恒为 [玩家0, 玩家1]。
   const pred = Outcome.outcome(mask, 1)
   const [pa, pb] = pred.score
-  // 实际自战：主视角（玩家 0）先开块，双方都是 L4
-  const [sa, sb] = selfplay(mask)
+  // 实际自战（缓存）
+  const [sa, sb] = selfplayCached(mask)
   const predWin = pa > pb ? 0 : pb > pa ? 1 : -1
   const actualWin = sa > sb ? 0 : sb > sa ? 1 : -1
-  if (predWin === actualWin) sameWinner++
+  if (predWin === actualWin) agree++
   diff.push(Math.abs((pa - pb) - (sa - sb)))
   cases.push({ g, filled: ARBoard.bitCount(mask), pred: `${pa}:${pb}`, actual: `${sa}:${sb}`, predWin, actualWin })
 }
 
 console.log(`=== 快速预测 vs 实际自战（${games} 个安全前沿，主视角=先开块方） ===`)
-console.log(`\n胜负一致率: ${sameWinner}/${games}（${(sameWinner / games * 100).toFixed(1)}%）`)
+console.log(`\n胜负一致率: ${agree}/${games}（${(agree / games * 100).toFixed(1)}%）`)
 console.log(`比分差（预测净胜 − 实际净胜）: 均值 ${(diff.reduce((s, v) => s + v, 0) / diff.length).toFixed(2)} · 中位 ${diff.sort((a, b) => a - b)[Math.floor(diff.length / 2)]} · 最大 ${Math.max(...diff)}`)
 console.log(`\n样例（前 15 局）:`)
 console.log('  局 | 已填边 | 预测比分 | 实际比分 | 预测 | 实际')
