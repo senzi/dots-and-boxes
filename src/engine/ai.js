@@ -14,6 +14,13 @@ buildTables()
 // 后续吃格阶段按计划执行。key 为游戏层的 state 对象（落子原地修改，引用稳定）。
 const l4Plans = new WeakMap()
 
+// L4 统计（研究用）：监控 L3 兜底是否触发（用户预判：永不触发）
+export const l4Stats = {
+  fallbackCount: 0,
+  fallbackCaptures: 0,
+  fallbackOpening: 0
+}
+
 export const AI_LEVELS = [
   { id: 1, name: '新兵', title: '休闲', desc: '初出茅庐，落子随缘，偶尔上头' },
   { id: 2, name: '老兵', title: '策略', desc: '身经百战，会吃格、懂避坑，稳扎稳打' },
@@ -928,8 +935,17 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
           return chooseCapture(state, player, captures)
         }
       }
-      // 无计划（异常路径）：回退 L3 完整吃格逻辑
-      return aiMoveLevel3(state, player, lastMove, controlOwner)
+      // 无计划：L4 作为接块方（对手开块后吃格）—— 纯价值判断决策：
+      // 能标准让块（handoutMoves 检测 2/4 连通让块）就保权，否则吃光。
+      l4Stats.fallbackCount++
+      l4Stats.fallbackCaptures++
+      const degrees = unclaimedDegrees(state)
+      const handouts = handoutMoves(state, moves, degrees)
+      if (handouts.length) {
+        const smallestGift = Math.min(...handouts.map(item => item.gift))
+        return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+      }
+      return chooseCapture(state, player, captures)
     }
     return chooseCapture(state, player, captures)
   }
@@ -966,8 +982,28 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
     // L4 价值估算异常时静默回退 L3
   }
 
-  // 兜底：L3 完整逻辑（短块 minimax / 有权无权 / 组件回退）
-  return aiMoveLevel3(state, player, lastMove, controlOwner)
+  // 最小回退：安全前沿开块（实测 200 局 0 次触发；保留组件排序兜底防异常）
+  l4Stats.fallbackCount++
+  l4Stats.fallbackOpening++
+  const degrees = unclaimedDegrees(state)
+  const components = residualComponents(state, degrees)
+  const seed = stateHash(state)
+  let best = null
+  let bestRank = null
+  for (const move of moves) {
+    const size = componentSizeForMove(move, components)
+    const danger = moveDanger(state, move.dir, move.r, move.c, player)
+    const rank = [size, danger, stableMoveHash(seed, move)]
+    if (
+      bestRank === null || rank[0] < bestRank[0] ||
+      (rank[0] === bestRank[0] && rank[1] < bestRank[1]) ||
+      (rank[0] === bestRank[0] && rank[1] === bestRank[1] && rank[2] > bestRank[2])
+    ) {
+      best = move
+      bestRank = rank
+    }
+  }
+  return best
 }
 
 // 游戏层在落子前调用，用于维护策略所需的“主动权归属”。它不修改 state。
