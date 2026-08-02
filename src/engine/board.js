@@ -7,7 +7,8 @@
 // 可选棋盘尺寸
 export const SIZES = [
   { id: 's6', label: '6×6 · 35 格', grid: 6 },
-  { id: 's8', label: '8×8 · 63 格', grid: 8 }
+  { id: 's8', label: '8×8 · 63 格', grid: 8 },
+  { id: 's10', label: '10×10 · 99 格', grid: 10 }
 ]
 export const DEFAULT_SIZE = 's6'
 export const REMOVED = { r: 0, c: 0 } // 被移除的角点（左上角）

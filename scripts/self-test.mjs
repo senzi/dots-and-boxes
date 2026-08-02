@@ -85,6 +85,29 @@ for (const level of [1, 2, 3]) {
   check(`L${level} 对局结束（${steps} 步，${a}:${bb}，格子 ${a + bb}/35）`, isGameOver(st) && a + bb === totalBoxes())
 }
 
+console.log('— 棋盘结构（10×10） —')
+setBoardSize('s10')
+const b10 = createBoard()
+check(`gridSize=10（实际 ${gridSize()}）`, gridSize() === 10)
+check(`总边数 218（实际 ${Object.keys(b10.edges).length}）`, Object.keys(b10.edges).length === 218)
+check(`可得分格子 99（实际 ${Object.keys(b10.boxes).length}）`, Object.keys(b10.boxes).length === 99)
+check(`移除角点 H(0,0) 不可用`, !('H-0-0' in b10.edges))
+check(`边界边 V(9,10) 可用`, 'V-9-10' in b10.edges)
+
+console.log('— 完整对局（AI 模拟，10×10，仅 L1/L2） —')
+for (const level of [1, 2]) {
+  const st = createBoard()
+  let p = 0, steps = 0
+  while (!isGameOver(st) && steps < 800) {
+    const m = getAiMove(level, st, p)
+    const r = placeEdge(st, m.dir, m.r, m.c, p)
+    if (r.gained === 0) p = 1 - p
+    steps++
+  }
+  const [a, bb] = scores(st)
+  check(`L${level} 对局结束（${steps} 步，${a}:${bb}，格子 ${a + bb}/99）`, isGameOver(st) && a + bb === totalBoxes())
+}
+
 setBoardSize('s8')
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 process.exit(fail ? 1 : 0)

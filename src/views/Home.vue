@@ -101,6 +101,7 @@ function start() {
           @click="size = s.id"
         >{{ s.label }}</button>
       </div>
+      <div v-if="size === 's10'" class="inline-hint mt-8">⚠ 10×10 棋盘较大，AI 思考可能很慢，一局耗时较久。</div>
     </div>
 
     <!-- 玩家设置 -->
@@ -185,6 +186,16 @@ function start() {
 .ai-item.active { border-color: var(--p2); background: var(--p2-fill); }
 .ai-name { font-weight: 700; font-size: 14px; color: var(--text); }
 .ai-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* 内联提示（10×10 慢棋警告） */
+.inline-hint {
+  font-size: 12px;
+  color: #b45309;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: var(--r-xl);
+  padding: 8px 12px;
+}
 
 /* 未完成对局恢复条 */
 .resume-bar {

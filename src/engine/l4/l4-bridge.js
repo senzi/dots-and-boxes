@@ -32,6 +32,11 @@ export function moveToEdgeIndex(move) {
   return edge ? edge.index : -1
 }
 
+// L4 价值引擎固定 8×8（142 边）；其他尺寸（6×6/10×10）回退 L3
+export function l4Supported(state) {
+  return Object.keys(state.edges).length === 142
+}
+
 // 安全前沿开边决策：分解当前局面，返回最小价值块（该开什么）
 // 附带当前块的标准让块（handout）与控制事件（留不留/保不保权）
 export function l4Opening(state) {
