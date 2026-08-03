@@ -97,8 +97,9 @@ function load() {
   updateCode()
 }
 
-function apply(dir, r, c, player) {
-  if (!state.value || over.value || aiThinking.value) return false
+function apply(dir, r, c, player, force = false) {
+  if (!state.value || over.value) return false
+  if (!force && aiThinking.value) return false // AI 内部调用 force=true 放行
   // 合法性校验（提前拦截非法边）
   const legal = legalMoves(state.value)
   const targetLegal = legal.some(m => m.dir === dir && m.r === r && m.c === c)
@@ -146,7 +147,7 @@ function aiMove(level) {
           move = fb
           showToast(`L${level} 非法边已回退：${fb.dir}-${fb.r}-${fb.c}`)
         }
-        const ok = apply(move.dir, move.r, move.c, 1)
+        const ok = apply(move.dir, move.r, move.c, 1, true)
         if (ok) {
           showToast(`L${level} 下了 ${move.dir}-${move.r}-${move.c}${current.value === 1 ? '，连击继续' : '，轮到你'}`)
         } else {
