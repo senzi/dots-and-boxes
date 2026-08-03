@@ -1011,6 +1011,82 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
   // 1) 有安全边时先取得免费分；无安全边的吃格阶段按开块时全局预测的计划执行。
   if (captures.length) {
     if (safe.length) return chooseCapture(state, player, captures)
+    // keepOnReceive（L5）：接块保权——captures 无精确计划时先尝试保权（不管 hasControl）
+    // 开块方无主动权，接块方（吃格决策者）是主动权方；有计划（L5 开块）走精确计划。
+    // 行为对齐 DP 预测（保权留 2/4 必须做到）；做不到 → 兜底数格停（Flag 不亮）。
+    const l4plan = l4Plans.get(state)
+    if (keepOnReceive && !l4plan) {
+      const kp = receiveKeepPlans.get(state)
+      if (kp) {
+        if (kp.remaining > 0) {
+          kp.remaining--
+          return chooseCapture(state, player, captures) // 继续吃（吃够留几前）
+        }
+        receiveKeepPlans.delete(state)
+        // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
+        if (kp.handoutMove) {
+          const legalSet = new Set(moves.map(m => moveKey(m)))
+          if (legalSet.has(moveKey(kp.handoutMove))) return kp.handoutMove
+        }
+        const nonCapture = moves.filter(m => immediateGainFast(state, moveKey(m)) === 0)
+        if (nonCapture.length) return chooseStableRandom(state, nonCapture)
+        return chooseCapture(state, player, captures)
+      }
+      // 无计划 → 找保权起始吃法（连续全吃路径 → 回溯 V-2/V-4 留尾巴）
+      // keep 从 frontierPlan 块来（KEEP_BY_2→2、KEEP_BY_4→4）；查不到默认 2
+      let keep = 2
+      let blockInfo = null
+      // 若 frontierPlan 未存（复盘场景 L5 未在安全阶段末决策）：
+      // 尝试从"开块前"重建——撤销 lastMove（开块边非吃格）→ l4 前沿 → 分解
+      if (!frontierPlan && lastMove && state.edges[edgeId(lastMove.dir, lastMove.r, lastMove.c)] !== null) {
+        try {
+          const pre = cloneState(state)
+          pre.edges[edgeId(lastMove.dir, lastMove.r, lastMove.c)] = null
+          const pred = L4Bridge.l4Predict(pre, 1 - player)
+          const edgeCount = Object.keys(pre.edges).length
+          const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
+          const boxBlock = new Map()
+          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
+          frontierPlan = { blocks: pred.blocks, boxBlock }
+          console.log(`[L5] 从开块前重建块结构：${pred.blocks.map((b, i) => `块${i}值${b.value}[${b.controlCode}]`).join(' · ')}`)
+        } catch (e) { console.warn('[L5] 重建块结构失败：' + e.message) }
+      }
+      if (frontierPlan && lastMove) {
+        const edgeBoxes = EDGE_BOXES[edgeId(lastMove.dir, lastMove.r, lastMove.c)]
+        if (edgeBoxes) {
+          for (const b of edgeBoxes) {
+            const bi = frontierPlan.boxBlock.get(`${b.r}-${b.c}`)
+            if (bi !== undefined) {
+              blockInfo = frontierPlan.blocks[bi]
+              keep = blockInfo.controlCode === 'KEEP_BY_4' ? 4 : 2
+              break
+            }
+          }
+        }
+      }
+      if (blockInfo) {
+        console.log(`[L5] DP 要求：这块值${blockInfo.value} [${blockInfo.controlCode}] → 保权留${keep}（handout=${blockInfo.handoutEdge ?? '无'}）`)
+      } else {
+        console.log(`[L5] DP 要求：frontierPlan 未命中（lastMove=${lastMove ? lastMove.dir + '-' + lastMove.r + '-' + lastMove.c : '?'}）→ 默认保权留2`)
+      }
+      const found = findKeepStart(state, captures, player, keep)
+      if (found) {
+        receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
+        return found.startMove
+      }
+      // 兜底保权（Flag 不能亮）：连续路径失败 → 按块值数格停（吃 V-keep 留 keep——保权动作）
+      // 吃格可能跨块（chooseCapture），但至少"吃部分停"而非吃光翻转——收益大于翻转
+      if (blockInfo && blockInfo.controlCode !== 'GAME_END' && blockInfo.handoutEdge != null) {
+        const eatCount = blockInfo.value - keep
+        if (eatCount >= 1) {
+          console.warn('[L5] 连续路径保权失败，兜底数格停：吃' + eatCount + '留' + keep + '（块值' + blockInfo.value + '）')
+          receiveKeepPlans.set(state, { remaining: eatCount - 1, handoutMove: null })
+          return captures[0]
+        }
+      }
+      // flag 报警：接块方应能保权但找不到留尾巴吃法（执行 ≠ DP 预测）
+      console.error('[L5][FLAG] 接块保权失败：找不到留尾巴吃法（captures=' + captures.map(m => m.dir + '-' + m.r + '-' + m.c).join(',') + '）——行为未对齐 DP，需调试')
+    }
     if (hasControl) {
       const plan = l4Plans.get(state)
       if (plan) {
@@ -1047,62 +1123,6 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
         return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
       }
       return chooseCapture(state, player, captures)
-    }
-    // 无控制权：L4 吃光；L5（keepOnReceive）先试接块保权——
-    // 开块方无主动权，接块方（吃格决策者）才是主动权方，即使 ctrl=0 也应保权。
-    // 行为对齐 DP 预测（保权留 2/4 必须做到）；做不到 → flag 报警调试。
-    if (keepOnReceive) {
-      const kp = receiveKeepPlans.get(state)
-      if (kp) {
-        if (kp.remaining > 0) {
-          kp.remaining--
-          return chooseCapture(state, player, captures) // 继续吃（吃够留几前）
-        }
-        receiveKeepPlans.delete(state)
-        // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
-        if (kp.handoutMove) {
-          const legalSet = new Set(moves.map(m => moveKey(m)))
-          if (legalSet.has(moveKey(kp.handoutMove))) return kp.handoutMove
-        }
-        const nonCapture = moves.filter(m => immediateGainFast(state, moveKey(m)) === 0)
-        if (nonCapture.length) return chooseStableRandom(state, nonCapture)
-        return chooseCapture(state, player, captures)
-      }
-      // 无计划 → 找保权起始吃法（连续全吃路径 → 回溯 V-2/V-4 留尾巴）
-      // keep 从 frontierPlan 块来（KEEP_BY_2→2、KEEP_BY_4→4）；查不到默认 2
-      let keep = 2
-      let blockInfo = null
-      if (frontierPlan && lastMove) {
-        const edgeBoxes = EDGE_BOXES[edgeId(lastMove.dir, lastMove.r, lastMove.c)]
-        if (edgeBoxes) {
-          for (const b of edgeBoxes) {
-            const bi = frontierPlan.boxBlock.get(`${b.r}-${b.c}`)
-            if (bi !== undefined) {
-              blockInfo = frontierPlan.blocks[bi]
-              keep = blockInfo.controlCode === 'KEEP_BY_4' ? 4 : 2
-              break
-            }
-          }
-        }
-      }
-      const found = findKeepStart(state, captures, player, keep)
-      if (found) {
-        receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
-        return found.startMove
-      }
-      // 兜底保权（Flag 不能亮）：连续路径失败 → 按块值数格停（吃 V-keep 留 keep——保权动作）
-      // 吃格可能跨块（chooseCapture），但至少"吃部分停"而非吃光翻转——收益大于翻转
-      if (blockInfo && blockInfo.controlCode !== 'GAME_END' && blockInfo.handoutEdge !== null) {
-        const eatCount = blockInfo.value - keep
-        if (eatCount >= 1) {
-          console.warn('[L5] 连续路径保权失败，兜底数格停：吃' + eatCount + '留' + keep + '（块值' + blockInfo.value + '）')
-          const hm = L4Bridge.edgeIndexToMove(blockInfo.handoutEdge)
-          receiveKeepPlans.set(state, { remaining: eatCount - 1, handoutMove: hm || null })
-          return captures[0]
-        }
-      }
-      // flag 报警：接块方应能保权但找不到留尾巴吃法（执行 ≠ DP 预测）
-      console.error('[L5][FLAG] 接块保权失败：找不到留尾巴吃法（captures=' + captures.map(m => m.dir + '-' + m.r + '-' + m.c).join(',') + '）——行为未对齐 DP，需调试')
     }
     return chooseCapture(state, player, captures)
   }
@@ -1201,25 +1221,30 @@ export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null
   const analysis = createL3Analysis()
   const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
   const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
-  // 安全阶段最后一条安全边时预存前沿块结构（每局一次，接块保权用）
-  if (safe.length === 1 && captures.length === 0) {
+  // 安全阶段临近前沿时预存前沿块结构（每局一次，接块保权用）
+  // 条件：安全边 ≤3；模拟下每条安全边，若下完即前沿（safe=0）→ 分解存
+  if (safe.length > 0 && safe.length <= 3 && !frontierPlan) {
     try {
-      const sim = cloneState(state)
-      placeEdge(sim, safe[0].dir, safe[0].r, safe[0].c, player)
-      const pred = L4Bridge.l4Predict(sim, 1 - player)
-      const edgeCount = Object.keys(state.edges).length
-      const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
-      const boxBlock = new Map()
-      pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
-      frontierPlan = { blocks: pred.blocks, boxBlock }
+      for (const s of safe) {
+        const sim = cloneState(state)
+        placeEdge(sim, s.dir, s.r, s.c, player)
+        const simSafe = legalMoves(sim).filter(m => immediateGainFast(sim, moveKey(m)) === 0 && moveDanger(sim, m.dir, m.r, m.c, player) === 0)
+        if (simSafe.length === 0) {
+          const pred = L4Bridge.l4Predict(sim, 1 - player)
+          const edgeCount = Object.keys(state.edges).length
+          const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
+          const boxBlock = new Map()
+          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
+          frontierPlan = { blocks: pred.blocks, boxBlock }
+          console.log(`[L5] 前沿块结构已存：${pred.blocks.map((b, i) => `块${i}值${b.value}[${b.controlCode}]handout=${b.handoutEdge ?? '无'}`).join(' · ')}`)
+          break
+        }
+      }
     } catch (e) { frontierPlan = null }
   }
   const controller = controlOwner === 0 || controlOwner === 1 ? controlOwner : player
   const hasControl = player === controller
-  console.log(`[L5] P${player} · 控制权P${controller}·hasControl=${hasControl} · 安全边${safe.length} · 可吃${captures.length}条(${captures.slice(0,4).map(m => m.dir + '-' + m.r + '-' + m.c).join(',')})`)
-  if (captures.length && !safe.length && !hasControl) {
-    console.log(`[L5] 接块无控制权 → 吃光（不给对手留）`)
-  }
+  console.log(`[L5] 我的回合 P${player} · 控制权P${controller} · 安全边${safe.length} · 可吃${captures.length}条(${captures.slice(0,4).map(m => m.dir + '-' + m.r + '-' + m.c).join(',')})`)
   return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER, false, true)
 }
 
