@@ -20,6 +20,62 @@ buildTables()
 // 后续吃格阶段按计划执行。key 为游戏层的 state 对象（落子原地修改，引用稳定）。
 const l4Plans = new WeakMap()
 
+// L5 接块方保权计划（跨步）：state → { remaining: 剩余可吃格数, handoutMove: 让块边 }
+const receiveKeepPlans = new WeakMap()
+
+// 尝试找保权起始吃法（用户算法：从一头吃、留尾巴）
+// 对每个 capture 起始：模拟连击到自然停（记路径）→ 吃 E-2 停 → 模拟对手连击
+// 选"对手恰好吃 2（留尾巴恰好）"的起始；无严格解时选对手连击最接近 2 的
+function findKeepStart(state, captures, player) {
+  let best = null
+  for (const m of captures) {
+    const sim = cloneState(state)
+    const first = placeEdge(sim, m.dir, m.r, m.c, player)
+    const path = [{ dir: m.dir, r: m.r, c: m.c }]
+    let guard = 0
+    while (guard++ < 8) {
+      const sc = legalMoves(sim).filter(x => immediateGainFast(sim, moveKey(x)) > 0)
+      if (!sc.length) break
+      const bestSelf = chooseCapture(sim, player, sc)
+      const res = placeEdge(sim, bestSelf.dir, bestSelf.r, bestSelf.c, player)
+      path.push({ dir: bestSelf.dir, r: bestSelf.r, c: bestSelf.c })
+      if (!res.gained) break
+    }
+    if (path.length < 4) continue // 保权空间不足（至少吃 2 留 2）
+    // 模拟：吃 E-2 停（留尾巴 2）→ 对手连击能吃多少 + 停时让块边
+    const stopAt = path.length - 2
+    const sim2 = cloneState(state)
+    for (let i = 0; i < stopAt; i++) placeEdge(sim2, path[i].dir, path[i].r, path[i].c, player)
+    // 停时找让块边（补上留的一根——让尾巴 2/4 可吃）
+    let handoutMove = null
+    const sm2 = legalMoves(sim2)
+    const sd2 = unclaimedDegrees(sim2)
+    const sh2 = handoutMoves(sim2, sm2, sd2)
+    if (sh2.length) {
+      const smallestGift = Math.min(...sh2.map(item => item.gift))
+      const h2 = sh2.filter(item => item.gift === smallestGift)[0]
+      handoutMove = h2.move
+    }
+    let oppEaten = 0
+    let g2 = 0
+    while (g2++ < 8) {
+      const om = legalMoves(sim2)
+      const oc = om.filter(x => immediateGainFast(sim2, moveKey(x)) > 0)
+      if (!oc.length) break
+      const bo = chooseCapture(sim2, 1 - player, oc)
+      const ores = placeEdge(sim2, bo.dir, bo.r, bo.c, 1 - player)
+      oppEaten += ores.gained
+      if (!ores.gained) break
+    }
+    // 选对手连击最接近 2（留尾巴恰好 2）；优先严格 =2；有让块边者加分
+    const score = (oppEaten === 2 ? 0 : Math.abs(oppEaten - 2) + 10) - (handoutMove ? 0.5 : 0)
+    if (!best || score < best.score) {
+      best = { startMove: m, remaining: stopAt, gift: 2, oppEaten, score, handoutMove }
+    }
+  }
+  return best
+}
+
 // L4 统计（研究用）：监控 L3 兜底是否触发（用户预判：永不触发）
 export const l4Stats = {
   fallbackCount: 0,
@@ -913,7 +969,7 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
 // L4 核心流程（L5/L6 研究版复用）：safeChooser 覆盖安全阶段决策
 // forceKeepAll=true：终盘预测强制所有块保权（一直保权实验）
 // （默认 chooseStrategicSafe 贴边；L5 传前瞻评估器）
-export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = null, safeChooser = null, forceKeepAll = false) {
+export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = null, safeChooser = null, forceKeepAll = false, keepOnReceive = false) {
   const moves = legalMoves(state)
   if (!moves.length) return null
   const analysis = createL3Analysis()
@@ -961,6 +1017,32 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
       if (handouts.length) {
         const smallestGift = Math.min(...handouts.map(item => item.gift))
         return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
+      }
+      // keepOnReceive（L5）：接块方保权（从一头吃、留尾巴，跨步计划）
+      if (keepOnReceive) {
+        const kp = receiveKeepPlans.get(state)
+        if (kp) {
+          if (kp.remaining > 0) {
+            kp.remaining--
+            return chooseCapture(state, player, captures) // 继续吃（吃够 E-2 停）
+          }
+          receiveKeepPlans.delete(state)
+          // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
+          if (kp.handoutMove) {
+            const legalSet = new Set(moves.map(m => moveKey(m)))
+            if (legalSet.has(moveKey(kp.handoutMove))) return kp.handoutMove
+          }
+          const nonCapture = moves.filter(m => immediateGainFast(state, moveKey(m)) === 0)
+          if (nonCapture.length) return chooseStableRandom(state, nonCapture)
+          return chooseCapture(state, player, captures) // 无开块边 → 吃光
+        }
+        // 无计划 → 找保权起始吃法（从一头吃、留尾巴、补让块边）
+        const found = findKeepStart(state, captures, player)
+        if (found) {
+          // startMove 已吃 1 格，剩余还需吃 found.remaining-1 格
+          receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
+          return found.startMove
+        }
       }
       return chooseCapture(state, player, captures)
     }
@@ -1054,8 +1136,9 @@ export function getAiMove(level, state, player, lastMove = null, controlOwner = 
 }
 
 // L5 神算：L4 核心 + 安全阶段前瞻选边（剩 ≤30 安全边时启发式搜索）
+// keepOnReceive=true：接块方（对手开块）保权吃法搜索（先吃部分格再让块）
 export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null) {
-  return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER)
+  return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER, false, true)
 }
 
 // L6 长考：L4 核心 + 全局频率启发（早期休息2手/中期休息1手/后期必定，不贴上一手）
