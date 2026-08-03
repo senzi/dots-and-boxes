@@ -62,18 +62,20 @@ function load() {
   let ctrl = 1
   let frontierAt = -1
   for (const m of seq) {
+    // 每步前检测：已到安全前沿（无安全边）→ 停止重放，留给交互
+    const board = getBoard(gridSize.value)
+    const mask = stateToMask(st)
+    const safe = board.legal(mask).filter(e => board.danger(mask, e) === 0)
+    if (safe.length === 0) {
+      frontierAt = mv.length
+      break
+    }
     const res = placeEdge(st, m.dir, m.r, m.c, m.player)
     if (!res.ok) { toast.value = `第 ${mv.length + 1} 步非法（${m.dir}-${m.r}-${m.c}）`; break }
     ctrl = l3ControlAfterMove(st, { dir: m.dir, r: m.r, c: m.c }, m.player, ctrl)
     mv.push(m)
     last = { dir: m.dir, r: m.r, c: m.c, player: m.player }
     cur = res.gained ? m.player : 1 - m.player
-    if (frontierAt < 0) {
-      const board = getBoard(gridSize.value)
-      const mask = stateToMask(st)
-      const safe = board.legal(mask).filter(e => board.danger(mask, e) === 0)
-      if (safe.length === 0) frontierAt = mv.length
-    }
   }
   state.value = st
   moves.value = mv
