@@ -127,14 +127,22 @@ function aiMove(level) {
   showToast(`L${level} 思考中…`)
   setTimeout(() => {
     try {
-      const move = getAiMove(level, state.value, 1, lastMove.value, controlOwner.value)
+      let move = getAiMove(level, state.value, 1, lastMove.value, controlOwner.value)
       if (move) {
+        // 防御：AI 返回非法/已填边 → 自动回退一条合法安全边（绝不卡死）
+        const legal = legalMoves(state.value)
+        if (!legal.some(m => m.dir === move.dir && m.r === move.r && m.c === move.c)) {
+          console.error('AI 返回非法边，回退:', move, 'legal=', legal.length)
+          const fb = legal[Math.floor(Math.random() * legal.length)]
+          move = fb
+          showToast(`L${level} 非法边已回退：${fb.dir}-${fb.r}-${fb.c}`)
+        }
         const ok = apply(move.dir, move.r, move.c, 1)
         if (ok) {
           showToast(`L${level} 下了 ${move.dir}-${move.r}-${move.c}${current.value === 1 ? '，连击继续' : '，轮到你'}`)
         } else {
-          showToast(`L${level} 落子被拒绝：${move.dir}-${move.r}-${move.c}（非法边）`)
-          console.error('AI 非法 move:', move, 'current=', current.value)
+          showToast(`L${level} 落子被拒绝：${move.dir}-${move.r}-${move.c}`)
+          console.error('AI 落子被拒:', move, 'current=', current.value)
         }
       } else showToast('AI 无子可下')
     } catch (e) {
@@ -151,17 +159,34 @@ function updateCode() {
   const seq = moves.value.map(m => `P${m.player} ${m.dir}-${m.r}-${m.c}`).join('\n')
   codeText.value = `${boardLabel.value}\n${seq}\n（当前轮：P${current.value}）`
 }
-async function copyCode() {
+// 复制文本（clipboard API 失败时回退 execCommand——支持 file:// 环境）
+async function copyText(text) {
   try {
-    await navigator.clipboard.writeText(codeText.value)
-    showToast('已复制局面码')
-  } catch { showToast('复制失败') }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    return true
+  } catch { return false }
+}
+async function copyCode() {
+  if (await copyText(codeText.value)) showToast('已复制局面码')
+  else showToast('复制失败')
 }
 function copyJson() {
   try {
     const payload = { size: size.value, moves: moves.value.map(m => ({ ...m })) }
-    navigator.clipboard.writeText(JSON.stringify(payload))
-    showToast('已复制 JSON（尺寸+序列）')
+    copyText(JSON.stringify(payload)).then(ok => showToast(ok ? '已复制 JSON（尺寸+序列）' : '复制失败'))
   } catch { showToast('复制失败') }
 }
 
