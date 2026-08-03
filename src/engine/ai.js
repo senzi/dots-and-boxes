@@ -1061,7 +1061,8 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
           const edgeCount = Object.keys(pre.edges).length
           const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
           const boxBlock = new Map()
-          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
+          // box 索引 → 坐标：l4-board 逐行编号（(0,0) 移除）——box i = 格(r,c) 满足 i = r*N + c - 1
+          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor((box + 1) / cols)}-${(box + 1) % cols}`, bi)))
           frontierPlan = { blocks: pred.blocks, boxBlock }
           console.log(`[L5] 从开块前重建块结构：${pred.blocks.map((b, i) => `块${i}值${b.value}[${b.controlCode}]`).join(' · ')}`)
         } catch (e) { console.warn('[L5] 重建块结构失败：' + e.message) }
@@ -1249,7 +1250,8 @@ export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null
           const edgeCount = Object.keys(state.edges).length
           const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
           const boxBlock = new Map()
-          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
+          // box 索引 → 坐标：l4-board 逐行编号（(0,0) 移除）——box i = 格(r,c) 满足 i = r*N + c - 1
+          pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor((box + 1) / cols)}-${(box + 1) % cols}`, bi)))
           frontierPlan = { blocks: pred.blocks, boxBlock }
           console.log(`[L5] 前沿块结构已存：${pred.blocks.map((b, i) => `块${i}值${b.value}[${b.controlCode}]handout=${b.handoutEdge ?? '无'}`).join(' · ')}`)
           break
