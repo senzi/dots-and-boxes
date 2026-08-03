@@ -139,36 +139,6 @@ function controlMeaning(value, gift) {
   return { code: 'TAKE_ALL', label: '全吃开块', parity: 1 }
 }
 
-// 环检测（用户算法）：环 = 连续 + 首尾相接（闭合）
-// 检查是否存在覆盖全块的简单路径且首尾相接（汉密尔顿环——4邻域共享边）——
-// 单纯路径连续（长条/链/田字群/对角连体）无 4邻域环——不是环——KEEP_BY_2
-function isRingBlock(board, startMask, boxes) {
-  if (boxes.length < 4) return false
-  const bs = boxes.map(i => board.boxes[i])
-  // 首尾相接用 4 邻域（共享边）——"相接"必须真的连边，对角共点不算
-  const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1
-  const n = bs.length
-  const adjList = bs.map((a, i) => bs.map((b, j) => j).filter(j => j !== i && adjacent(a, bs[j])))
-  // 汉密尔顿环 DFS：覆盖所有格且首尾相接（任一起点有环即可）
-  let nodes = 0
-  function dfs(cur, visited, count) {
-    if (++nodes > 2000) return false // 剪枝保护（超限视为无环——保守 KEEP_BY_2）
-    if (count === n) return adjacent(bs[cur], bs[0])
-    for (const nx of adjList[cur]) {
-      if (visited.has(nx)) continue
-      visited.add(nx)
-      if (dfs(nx, visited, count + 1)) return true
-      visited.delete(nx)
-    }
-    return false
-  }
-  for (let s = 0; s < n; s++) {
-    const visited = new Set([s])
-    if (dfs(s, visited, 1)) return true
-  }
-  return false
-}
-
 function create(board, frontier, options) {
   return {
     board,
@@ -204,13 +174,6 @@ function next(state) {
   const meaning = anotherBlockRemains
     ? controlMeaning(chosen.value, handout.gift)
     : { code: 'GAME_END', label: '终局', parity: 0 }
-  // 环检测（2026-08-03 用户定调）：连续全吃整条连续的块是环 → 留 4（KEEP_BY_4）
-  // 环留 2 保不住权（对手吃完尾巴连击），findStandardHandout 的 gift=2 误判在此纠正
-  // 价值 < 4 不可能成环（最小环 = 田字 4 格）——直接 KEEP_BY_2，不做环检测
-  if (meaning.code === 'KEEP_BY_2' && handout.gift === 2 && chosen.value >= 4 && isRingBlock(board, chosen.startMask, chosen.boxes)) {
-    meaning.code = 'KEEP_BY_4'
-    meaning.label = '保权·让4（环）'
-  }
   const blockIndex = state.blocks.length
   const allMoves = [chosen.edge, ...chosen.captureMoves]
   for (const edge of allMoves) state.edgeOwners.set(edge, blockIndex)

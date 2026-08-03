@@ -71,7 +71,34 @@ function enumerateFullPaths(state, startMove, player) {
   return paths
 }
 
-// 尝试找保权起始吃法（用户算法：枚举完整吃路径 → 回溯 V-2/V-4 留尾巴）
+// 环检测（本地版——4邻域汉密尔顿环，与 l4-value 的 isRingBlock 一致）
+// 环 = 连续 + 首尾相接（闭合）：覆盖全块的简单路径且首尾相接
+function isRingLocal(boxes, cols) {
+  if (boxes.length < 4) return false
+  const bs = boxes.map(box => ({ r: Math.floor((box + 1) / cols), c: (box + 1) % cols }))
+  const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1
+  const n = bs.length
+  const adjList = bs.map((a, i) => bs.map((b, j) => j).filter(j => j !== i && adjacent(a, bs[j])))
+  let nodes = 0
+  function dfs(cur, visited, count) {
+    if (++nodes > 2000) return false
+    if (count === n) return adjacent(bs[cur], bs[0])
+    for (const nx of adjList[cur]) {
+      if (visited.has(nx)) continue
+      visited.add(nx)
+      if (dfs(nx, visited, count + 1)) return true
+      visited.delete(nx)
+    }
+    return false
+  }
+  for (let s = 0; s < n; s++) {
+    const visited = new Set([s])
+    if (dfs(s, visited, 1)) return true
+  }
+  return false
+}
+
+// 尝试找保权起始吃法（用户算法：枚举完整吃路径 → 回溯留尾巴）
 // 尾巴（回溯的 keep 手）必须连续（日字/4格）；满足则存完整路径，执行到 stopAt 停
 function findKeepStart(state, captures, player, keep = 2) {
   let best = null
@@ -1081,7 +1108,28 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
         }
       }
       if (blockInfo) {
-        console.log(`[L5] DP 要求：这块值${blockInfo.value} [${blockInfo.controlCode}] → 保权留${keep}（handout=${blockInfo.handoutEdge ?? '无'}）`)
+        // keep 由 DP 判定（不写死）：KEEP_BY_2 → 2、KEEP_BY_4 → 4
+        // 回溯规则（用户）：KEEP_BY_2 生成一个日字（回溯2）；KEEP_BY_4 生成两个日字——
+        //   应对环 → 回溯 4；不是环 → 回溯 5
+        // GAME_END 块被提前开（非终局）→ 按环检测：是环 Keep4、不是环 Keep2
+        const edgeCount = Object.keys(state.edges).length
+        const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
+        const isRing = blockInfo.controlCode === 'GAME_END' || blockInfo.controlCode === 'KEEP_BY_4'
+          ? isRingLocal(blockInfo.boxes, cols)
+          : false
+        if (blockInfo.controlCode === 'GAME_END') {
+          keep = isRing ? 4 : 2
+        } else if (blockInfo.controlCode === 'KEEP_BY_4') {
+          keep = isRing ? 4 : 5 // 环回溯4 / 非环回溯5（两个日字）
+        } else {
+          keep = 2
+        }
+        const keepLabel = blockInfo.controlCode === 'GAME_END'
+          ? `终局块提前开→Keep${keep}（${isRing ? '环' : '非环'}）`
+          : blockInfo.controlCode === 'KEEP_BY_4'
+            ? `保权留4（${isRing ? '环→回溯4' : '非环→回溯5'}）`
+            : `保权留2`
+        console.log(`[L5] DP 要求：这块值${blockInfo.value} [${blockInfo.controlCode}] → ${keepLabel}（handout=${blockInfo.handoutEdge ?? '无'}）`)
       } else {
         console.log(`[L5] DP 要求：frontierPlan 未命中（lastMove=${lastMove ? lastMove.dir + '-' + lastMove.r + '-' + lastMove.c : '?'}）→ 默认保权留2`)
       }
