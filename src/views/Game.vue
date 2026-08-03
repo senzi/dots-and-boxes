@@ -314,17 +314,13 @@ onMounted(() => {
 .score-sep { font-size: 28px; }
 
 /* 响应式 */
-/* 竖屏（手机/iPad 竖放）：上下对坐 —— 玩家0 卡片在上（倒转 180° 朝向下端玩家）、棋盘垂直居中、玩家1 卡片在下（正着朝向上端玩家） */
+/* 竖屏（手机/iPad 竖放）：上下对坐 —— 玩家0 卡片在上（倒转 180° 朝向下端玩家）、棋盘居中位、玩家1 卡片在下（正着朝向上端玩家） */
+/* 不追求垂直居中（真机地址栏 dvh/lvh 都会导致偏移），靠间距设计：顶栏下 16px + 卡片-棋盘 16px 等距 */
 @media (max-width: 860px) and (orientation: portrait) {
-  /* 页面上下 padding 对称 + 顶栏悬浮不占流 → face-layout 撑满剩余空间，棋盘精确垂直居中 */
-  /* min-height 用 lvh（地址栏收起时的大视口）：dvh 会随浏览器地址栏变化，真机上棋盘会相对物理屏偏上 */
-  .game-page { min-height: 100vh; min-height: 100lvh; padding: 56px 16px; }
-  .game-page > .row-between { position: absolute; top: 8px; left: 16px; right: 16px; }
   .face-layout {
     flex-direction: column;
-    gap: 8px;   /* 比分牌稍微靠近棋盘（上下等距对称） */
-    justify-content: center;
-    margin-top: 0;
+    gap: 16px;
+    margin-top: 16px;
   }
   .face-layout .side-panel { width: 100%; max-width: 620px; }
   .face-layout .rot90 { transform: rotate(180deg); }
