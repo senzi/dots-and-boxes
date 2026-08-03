@@ -16,6 +16,13 @@ const toast = ref('')
 
 const isFace = computed(() => game.mode === 'face')
 const scores = computed(() => game.scores)
+// 面对面 toast 位置：竖屏时跟随当前行动玩家，弹在其比分牌内侧（卡片与棋盘之间），与比分牌同旋转
+const toastPos = computed(() => {
+  if (!isFace.value) return 'toast-board'
+  const portrait = window.matchMedia('(max-width: 860px) and (orientation: portrait)').matches
+  if (!portrait) return 'toast-board'
+  return game.current === 0 ? 'toast-top' : 'toast-bottom'
+})
 const aiLevelName = computed(() => {
   const lv = AI_LEVELS.find(l => l.id === game.aiLevel)
   return lv ? lv.name : ''
@@ -149,7 +156,7 @@ onMounted(() => {
       </div>
       <div class="board-wrap">
         <Board :board="game.board" :players="game.players" :last-move="game.lastMove" :grid-size="game.boardGrid" :disabled="game.over || game.aiThinking" @place="onPlace" />
-        <div v-if="toast" class="toast">{{ toast }}</div>
+        <div v-if="toast" class="toast" :class="toastPos">{{ toast }}</div>
       </div>
       <div class="side-panel rot-90" :class="{ active: !game.over && game.current === 1 }">
         <PlayerCard :player="game.players[1]" :score="scores[1]" :player-index="1" :active="!game.over && game.current === 1" :turn="!game.over && game.current === 1" />
@@ -243,10 +250,19 @@ onMounted(() => {
   padding: 8px 16px;
   border-radius: 9999px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-  animation: fadeUp 0.25s ease both;
+  animation: toastFade 0.25s ease both;
   white-space: nowrap;
   z-index: 5;
 }
+/* toast 专用淡入：只动 opacity，不碰 transform（否则覆盖 translateX 居中和 rotate 旋转） */
+@keyframes toastFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* 面对面竖屏：跟随当前行动玩家，弹在其比分牌内侧（卡片与棋盘之间），与比分牌同旋转 */
+/* 注意 transform 顺序：先 rotate 再 translateX（rotate 在后会连平移方向一起转，toast 被甩到一侧） */
+.toast-top { transform: translateX(-50%) rotate(180deg); }          /* 玩家0 内侧（棋盘上方），倒转 */
+.toast-bottom { top: auto; bottom: -8px; transform: translateX(-50%) rotate(0deg); }  /* 玩家1 内侧（棋盘下方），正着 */
 
 /* 玩家卡片 */
 .player-card {
@@ -298,11 +314,23 @@ onMounted(() => {
 .score-sep { font-size: 28px; }
 
 /* 响应式 */
-@media (max-width: 860px) {
-  .face-layout { flex-direction: column; gap: 12px; }
+/* 竖屏（手机/iPad 竖放）：上下对坐 —— 玩家0 卡片在上（倒转 180° 朝向下端玩家）、棋盘垂直居中、玩家1 卡片在下（正着朝向上端玩家） */
+@media (max-width: 860px) and (orientation: portrait) {
+  /* 页面上下 padding 对称 + 顶栏悬浮不占流 → face-layout 撑满剩余空间，棋盘精确垂直居中 */
+  .game-page { padding: 56px 16px; }
+  .game-page > .row-between { position: absolute; top: 8px; left: 16px; right: 16px; }
+  .face-layout {
+    flex-direction: column;
+    gap: 8px;   /* 比分牌稍微靠近棋盘（上下等距对称） */
+    justify-content: center;
+    margin-top: 0;
+  }
   .face-layout .side-panel { width: 100%; max-width: 620px; }
+  .face-layout .rot90 { transform: rotate(180deg); }
   .face-layout .rot-90 { transform: rotate(0deg); }
-  .face-layout .rot90 { transform: rotate(0deg); }
-  .face-layout .board-wrap { order: -1; }
+}
+/* 横屏窄屏（手机横放）：保持左右对坐，侧面板收窄防挤压 */
+@media (max-width: 860px) and (orientation: landscape) {
+  .face-layout .side-panel { width: min(200px, 18vw); }
 }
 </style>
