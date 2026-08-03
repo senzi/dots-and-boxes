@@ -93,8 +93,17 @@ function load() {
 
 function apply(dir, r, c, player) {
   if (!state.value || over.value || aiThinking.value) return false
+  // 合法性校验（提前拦截非法边）
+  const legal = legalMoves(state.value)
+  if (!legal.some(m => m.dir === dir && m.r === r && m.c === c)) {
+    console.warn('apply 拒绝非法边:', dir, r, c, '当前合法边数', legal.length)
+    return false
+  }
   const res = placeEdge(state.value, dir, r, c, player)
-  if (!res.ok) return false
+  if (!res.ok) {
+    console.warn('placeEdge 失败:', dir, r, c, 'edges 状态:', state.value.edges[`${dir}-${r}-${c}`])
+    return false
+  }
   controlOwner.value = l3ControlAfterMove(state.value, { dir, r, c }, player, controlOwner.value)
   moves.value.push({ player, dir, r, c })
   lastMove.value = { dir, r, c, player }
@@ -120,8 +129,13 @@ function aiMove(level) {
     try {
       const move = getAiMove(level, state.value, 1, lastMove.value, controlOwner.value)
       if (move) {
-        apply(move.dir, move.r, move.c, 1)
-        showToast(`L${level} 下了 ${move.dir}-${move.r}-${move.c}${current.value === 1 ? '，连击继续' : '，轮到你'}`)
+        const ok = apply(move.dir, move.r, move.c, 1)
+        if (ok) {
+          showToast(`L${level} 下了 ${move.dir}-${move.r}-${move.c}${current.value === 1 ? '，连击继续' : '，轮到你'}`)
+        } else {
+          showToast(`L${level} 落子被拒绝：${move.dir}-${move.r}-${move.c}（非法边）`)
+          console.error('AI 非法 move:', move, 'current=', current.value)
+        }
       } else showToast('AI 无子可下')
     } catch (e) {
       showToast('AI 异常: ' + e.message)
@@ -171,6 +185,7 @@ onMounted(() => setBoardSize(size.value))
         </div>
         <Board
           v-if="state"
+          :key="moves.length"
           :board="state"
           :players="[{ avatar: '你' }, { avatar: 'AI' }]"
           :last-move="lastMove"
