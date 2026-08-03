@@ -198,7 +198,8 @@ function next(state) {
     : { code: 'GAME_END', label: '终局', parity: 0 }
   // 环检测（2026-08-03 用户定调）：连续全吃整条连续的块是环 → 留 4（KEEP_BY_4）
   // 环留 2 保不住权（对手吃完尾巴连击），findStandardHandout 的 gift=2 误判在此纠正
-  if (meaning.code === 'KEEP_BY_2' && handout.gift === 2 && isRingBlock(board, chosen.startMask, chosen.boxes)) {
+  // 价值 < 4 不可能成环（最小环 = 田字 4 格）——直接 KEEP_BY_2，不做环检测
+  if (meaning.code === 'KEEP_BY_2' && handout.gift === 2 && chosen.value >= 4 && isRingBlock(board, chosen.startMask, chosen.boxes)) {
     meaning.code = 'KEEP_BY_4'
     meaning.label = '保权·让4（环）'
   }
