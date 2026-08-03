@@ -1071,14 +1071,15 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
       // 无计划 → 找保权起始吃法（连续全吃路径 → 回溯 V-2/V-4 留尾巴）
       // keep 从 frontierPlan 块来（KEEP_BY_2→2、KEEP_BY_4→4）；查不到默认 2
       let keep = 2
+      let blockInfo = null
       if (frontierPlan && lastMove) {
         const edgeBoxes = EDGE_BOXES[edgeId(lastMove.dir, lastMove.r, lastMove.c)]
         if (edgeBoxes) {
           for (const b of edgeBoxes) {
             const bi = frontierPlan.boxBlock.get(`${b.r}-${b.c}`)
             if (bi !== undefined) {
-              const blk = frontierPlan.blocks[bi]
-              keep = blk.controlCode === 'KEEP_BY_4' ? 4 : 2
+              blockInfo = frontierPlan.blocks[bi]
+              keep = blockInfo.controlCode === 'KEEP_BY_4' ? 4 : 2
               break
             }
           }
@@ -1088,6 +1089,17 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
       if (found) {
         receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
         return found.startMove
+      }
+      // 兜底保权（Flag 不能亮）：连续路径失败 → 按块值数格停（吃 V-keep 留 keep——保权动作）
+      // 吃格可能跨块（chooseCapture），但至少"吃部分停"而非吃光翻转——收益大于翻转
+      if (blockInfo && blockInfo.controlCode !== 'GAME_END' && blockInfo.handoutEdge !== null) {
+        const eatCount = blockInfo.value - keep
+        if (eatCount >= 1) {
+          console.warn('[L5] 连续路径保权失败，兜底数格停：吃' + eatCount + '留' + keep + '（块值' + blockInfo.value + '）')
+          const hm = L4Bridge.edgeIndexToMove(blockInfo.handoutEdge)
+          receiveKeepPlans.set(state, { remaining: eatCount - 1, handoutMove: hm || null })
+          return captures[0]
+        }
       }
       // flag 报警：接块方应能保权但找不到留尾巴吃法（执行 ≠ DP 预测）
       console.error('[L5][FLAG] 接块保权失败：找不到留尾巴吃法（captures=' + captures.map(m => m.dir + '-' + m.r + '-' + m.c).join(',') + '）——行为未对齐 DP，需调试')
