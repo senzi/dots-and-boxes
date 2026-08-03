@@ -985,36 +985,6 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
   // 1) 有安全边时先取得免费分；无安全边的吃格阶段按开块时全局预测的计划执行。
   if (captures.length) {
     if (safe.length) return chooseCapture(state, player, captures)
-    // keepOnReceive（L5）：接块方保权——开块方无主动权，接块方（吃格决策者）就是主动权方
-    // 不管 controlOwner 的 ctrl=0（开块方获得控制的语义与主动权无关），接块必须尝试保权。
-    // 行为对齐 DP 预测（保权留 2/4 必须做到）；做不到 → flag 报警调试。
-    if (keepOnReceive && !safe.length) {
-      const kp = receiveKeepPlans.get(state)
-      if (kp) {
-        if (kp.remaining > 0) {
-          kp.remaining--
-          return chooseCapture(state, player, captures) // 继续吃（吃够留几前）
-        }
-        receiveKeepPlans.delete(state)
-        // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
-        if (kp.handoutMove) {
-          const legalSet = new Set(moves.map(m => moveKey(m)))
-          if (legalSet.has(moveKey(kp.handoutMove))) return kp.handoutMove
-        }
-        const nonCapture = moves.filter(m => immediateGainFast(state, moveKey(m)) === 0)
-        if (nonCapture.length) return chooseStableRandom(state, nonCapture)
-        return chooseCapture(state, player, captures)
-      }
-      // 无计划 → 找保权起始吃法（从一头吃、留尾巴、补让块边）
-      const found = findKeepStart(state, captures, player)
-      if (found) {
-        receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
-        return found.startMove
-      }
-      // flag 报警：接块方应能保权但找不到留尾巴吃法（执行 ≠ DP 预测）
-      console.error('[L5][FLAG] 接块保权失败：找不到留尾巴吃法（captures=' + captures.map(m => m.dir + '-' + m.r + '-' + m.c).join(',') + '）——行为未对齐 DP，需调试')
-      return chooseCapture(state, player, captures) // 兜底吃光
-    }
     if (hasControl) {
       const plan = l4Plans.get(state)
       if (plan) {
@@ -1051,6 +1021,35 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
         return chooseStableRandom(state, handouts.filter(item => item.gift === smallestGift).map(item => item.move))
       }
       return chooseCapture(state, player, captures)
+    }
+    // 无控制权：L4 吃光；L5（keepOnReceive）先试接块保权——
+    // 开块方无主动权，接块方（吃格决策者）才是主动权方，即使 ctrl=0 也应保权。
+    // 行为对齐 DP 预测（保权留 2/4 必须做到）；做不到 → flag 报警调试。
+    if (keepOnReceive) {
+      const kp = receiveKeepPlans.get(state)
+      if (kp) {
+        if (kp.remaining > 0) {
+          kp.remaining--
+          return chooseCapture(state, player, captures) // 继续吃（吃够留几前）
+        }
+        receiveKeepPlans.delete(state)
+        // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
+        if (kp.handoutMove) {
+          const legalSet = new Set(moves.map(m => moveKey(m)))
+          if (legalSet.has(moveKey(kp.handoutMove))) return kp.handoutMove
+        }
+        const nonCapture = moves.filter(m => immediateGainFast(state, moveKey(m)) === 0)
+        if (nonCapture.length) return chooseStableRandom(state, nonCapture)
+        return chooseCapture(state, player, captures)
+      }
+      // 无计划 → 找保权起始吃法（从一头吃、留尾巴、补让块边）
+      const found = findKeepStart(state, captures, player)
+      if (found) {
+        receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
+        return found.startMove
+      }
+      // flag 报警：接块方应能保权但找不到留尾巴吃法（执行 ≠ DP 预测）
+      console.error('[L5][FLAG] 接块保权失败：找不到留尾巴吃法（captures=' + captures.map(m => m.dir + '-' + m.r + '-' + m.c).join(',') + '）——行为未对齐 DP，需调试')
     }
     return chooseCapture(state, player, captures)
   }
