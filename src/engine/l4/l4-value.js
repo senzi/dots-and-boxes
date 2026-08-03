@@ -139,6 +139,28 @@ function controlMeaning(value, gift) {
   return { code: 'TAKE_ALL', label: '全吃开块', parity: 1 }
 }
 
+// 环检测（用户算法）：从块的开口（3 边格）开始，连续优先全吃（每步相邻——平行/共点）
+// 如果存在一条覆盖整个块且全程连续的吃路径 → 环 → 留 4（KEEP_BY_4）
+function isRingBlock(board, startMask, boxes) {
+  if (boxes.length < 4) return false
+  const starters = boxes.filter(box => board.bitCount(startMask & board.boxes[box].mask) === 3)
+  if (!starters.length) return false
+  const adjacent = (a, b) => Math.abs(a.r - b.r) <= 1 && Math.abs(a.c - b.c) <= 1
+  for (const s of starters) {
+    const eaten = new Set([s])
+    const queue = [s]
+    while (queue.length) {
+      const cur = queue.shift()
+      for (const b of boxes) {
+        if (eaten.has(b)) continue
+        if (adjacent(board.boxes[cur], board.boxes[b])) { eaten.add(b); queue.push(b) }
+      }
+    }
+    if (eaten.size === boxes.length) return true // 全程连续覆盖全块 → 环
+  }
+  return false
+}
+
 function create(board, frontier, options) {
   return {
     board,
@@ -174,6 +196,12 @@ function next(state) {
   const meaning = anotherBlockRemains
     ? controlMeaning(chosen.value, handout.gift)
     : { code: 'GAME_END', label: '终局', parity: 0 }
+  // 环检测（2026-08-03 用户定调）：连续全吃整条连续的块是环 → 留 4（KEEP_BY_4）
+  // 环留 2 保不住权（对手吃完尾巴连击），findStandardHandout 的 gift=2 误判在此纠正
+  if (meaning.code === 'KEEP_BY_2' && handout.gift === 2 && isRingBlock(board, chosen.startMask, chosen.boxes)) {
+    meaning.code = 'KEEP_BY_4'
+    meaning.label = '保权·让4（环）'
+  }
   const blockIndex = state.blocks.length
   const allMoves = [chosen.edge, ...chosen.captureMoves]
   for (const edge of allMoves) state.edgeOwners.set(edge, blockIndex)
