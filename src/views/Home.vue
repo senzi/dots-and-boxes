@@ -238,6 +238,7 @@ function start() {
       <button class="btn btn-primary btn-lg flex-1" @click="start">开始游戏</button>
       <router-link to="/history" class="btn btn-outline btn-lg">历史</router-link>
       <router-link to="/settings" class="btn btn-outline btn-lg">设置</router-link>
+      <router-link to="/lab" class="btn btn-outline btn-lg">实验室</router-link>
     </div>
   </div>
 </template>

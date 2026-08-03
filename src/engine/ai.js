@@ -8,8 +8,11 @@ import {
 } from './board.js'
 import L4Bridge from './l4/l4-bridge.js'
 
-// L5 安全阶段前瞻选边器（剩 ≤20 安全边时启发式搜索，其余回退贴边）
+// L5 安全阶段前瞻选边器（剩 ≤30 安全边时启发式搜索，其余回退贴边）
 const L5_SAFE_CHOOSER = (state, safe, player, lastMove) => L4Bridge.l5SafeChooser(state, safe, player, lastMove)
+
+// L6 长考版安全阶段选边器（全局频率启发 + 动态参数，不贴上一手）
+const L6_SAFE_CHOOSER = (state, safe, player, lastMove) => L4Bridge.l6SafeChooser(state, safe, player, lastMove)
 
 buildTables()
 
@@ -907,9 +910,10 @@ export function aiMoveLevel4(state, player, lastMove = null, controlOwner = null
   return aiMoveLevel4With(state, player, lastMove, controlOwner, null)
 }
 
-// L4 核心流程（L5 研究版复用）：safeChooser 覆盖安全阶段决策
+// L4 核心流程（L5/L6 研究版复用）：safeChooser 覆盖安全阶段决策
+// forceKeepAll=true：终盘预测强制所有块保权（一直保权实验）
 // （默认 chooseStrategicSafe 贴边；L5 传前瞻评估器）
-export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = null, safeChooser = null) {
+export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = null, safeChooser = null, forceKeepAll = false) {
   const moves = legalMoves(state)
   if (!moves.length) return null
   const analysis = createL3Analysis()
@@ -983,7 +987,7 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
         try {
           // 安全前沿轮到 player 是开块方（无主动权，用户定义：开块瞬间即无主动权）。
           // 全局预测以主动权方（吃块决策者）= 1-player 为 firstPlayer。
-          const prediction = L4Bridge.l4Predict(state, 1 - player)
+          const prediction = L4Bridge.l4Predict(state, 1 - player, { forceKeepAll })
           if (prediction.tree) {
             l4Plans.set(state, {
               controlCode: prediction.blocks[0] ? prediction.blocks[0].controlCode : null,
@@ -1049,9 +1053,19 @@ export function getAiMove(level, state, player, lastMove = null, controlOwner = 
   return aiMoveLevel2(state, player)
 }
 
-// L5 神算：L4 核心 + 安全阶段前瞻选边（剩 ≤20 安全边时启发式搜索）
+// L5 神算：L4 核心 + 安全阶段前瞻选边（剩 ≤30 安全边时启发式搜索）
 export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null) {
   return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER)
+}
+
+// L6 长考：L4 核心 + 全局频率启发（早期休息2手/中期休息1手/后期必定，不贴上一手）
+export function aiMoveLevel6(state, player, lastMove = null, controlOwner = null) {
+  return aiMoveLevel4With(state, player, lastMove, controlOwner, L6_SAFE_CHOOSER)
+}
+
+// L5 一直保权实验版：L4 核心 + L5 前瞻 + 终盘强制所有块保权
+export function aiMoveLevel5Keep(state, player, lastMove = null, controlOwner = null) {
+  return aiMoveLevel4With(state, player, lastMove, controlOwner, L5_SAFE_CHOOSER, true)
 }
 
 export function aiMoveDelay(level) {

@@ -53,8 +53,11 @@ function solve(blocks, firstPlayer, outerForce) {
     if (memo.has(key)) return memo.get(key)
     const block = blocks[i]
     let best = null
-    for (const opt of optionSet(block, c)) {
-      if (force && force.has(i) && !opt.label.includes('保权')) continue
+    const opts = optionSet(block, c)
+    // forceKeep：强制保权选项；若该块无保权选项（如 handoutEdge=null 的田字），回退全部选项
+    const keepOpts = opts.filter(o => o.label.includes('保权'))
+    const usable = force && force.has(i) && keepOpts.length ? keepOpts : opts
+    for (const opt of usable) {
       const sub = rec(i + 1, opt.next)
       const cTotal = opt.take + (opt.next === c ? sub[0] : sub[1])
       const oppTotal = opt.give + (opt.next === c ? sub[1] : sub[0])

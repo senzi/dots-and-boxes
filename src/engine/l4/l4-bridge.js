@@ -121,6 +121,45 @@ export function l5SafeChooser(state, safeMoves, player, lastMove, options = {}) 
   return best
 }
 
+// L6 长考版安全阶段选边（safeChooser）：全局启发 + 频率控制 + 动态参数
+// 频率/参数随剩余安全边 R 动态：
+//   R>40 早期：休息2手启发1次（30%）· 候选3×sims1 · 探索3（省算力，淹没区）
+//   20<R≤40 中期：休息1手（50%）· 候选5×sims2 · 探索6
+//   R≤20 后期：必定启发（100%）· 候选50%↑ × sims3 · 探索10（长考决胜区）
+// 休息 = 随机安全边（L4 回退为贴边，这里显式随机）
+export function l6SafeChooser(state, safeMoves, player, lastMove, options = {}) {
+  const R = safeMoves.length
+  let freq, nCand, nSims, explore
+  if (R > 40) { freq = 0.3; nCand = 3; nSims = 1; explore = 0 }
+  else if (R > 20) { freq = 0.5; nCand = 5; nSims = 2; explore = 0 }
+  else { freq = 1.0; nCand = Math.max(5, Math.ceil(R * 0.5)); nSims = 3; explore = 0 }
+  if (Math.random() > freq) {
+    return safeMoves[Math.floor(Math.random() * safeMoves.length)] // 休息：随机安全边
+  }
+  const board = boardForState(state)
+  const baseMask = stateToMask(state)
+  const step = Math.max(1, Math.floor(safeMoves.length / nCand))
+  const candidates = safeMoves.filter((_, i) => i % step === 0).slice(0, nCand)
+  let best = null
+  let bestNet = -Infinity
+  let seedBase = 12000000
+  for (const move of candidates) {
+    const e = board.edgeById.get(`${move.dir}-${move.r}-${move.c}`)
+    if (!e) continue
+    const mask1 = board.put(baseMask, e.index)
+    let net = 0
+    for (let g = 0; g < nSims; g++) {
+      const f = l5GrowFull(board, mask1, seedBase + g * 7919, explore)
+      const pred = L4Outcome.outcome(board, f, 1)
+      net += player === 0 ? pred.score[0] - pred.score[1] : pred.score[1] - pred.score[0]
+    }
+    const avgNet = net / nSims
+    if (avgNet > bestNet) { bestNet = avgNet; best = move }
+    seedBase += 1000
+  }
+  return best
+}
+
 // 安全前沿开边决策：分解当前局面，返回最小价值块（该开什么）
 // 附带当前块的标准让块（handout）与控制事件（留不留/保不保权）
 export function l4Opening(state) {
@@ -146,10 +185,15 @@ export function l4Opening(state) {
   }
 }
 
-// 完整终盘预测（outcome DP）
-export function l4Predict(state, firstPlayer) {
+// 完整终盘预测（outcome DP）；options.forceKeepAll=true 强制所有块保权（实验）
+export function l4Predict(state, firstPlayer, options) {
   const board = boardForState(state)
-  return L4Outcome.outcome(board, stateToMask(state), firstPlayer)
+  const mask = stateToMask(state)
+  const opts = {}
+  if (options && options.forceKeepAll) {
+    const groups = L4Value.enumerateValueBlocks(board, mask)
+    opts.forceKeep = new Set(groups.map((_, i) => i))
+  }
+  return L4Outcome.outcome(board, mask, firstPlayer, opts)
 }
-
-export default { stateToMask, edgeIndexToMove, l4MoveFromEdge, l4Opening, l4Predict, l5GrowFull, l5SafeChooser }
+export default { stateToMask, edgeIndexToMove, l4MoveFromEdge, l4Opening, l4Predict, l5GrowFull, l5SafeChooser, l6SafeChooser }
