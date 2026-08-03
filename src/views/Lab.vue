@@ -58,6 +58,12 @@ function parseSequence(text) {
 function load() {
   const seq = parseSequence(inputText.value)
   if (!seq.length) { showToast('未解析到落子序列（格式：P0 H-1-2）'); return }
+  // 自动尺寸检测：按序列最大坐标推断棋盘（防 size 选错）
+  let maxCoord = 0
+  for (const m of seq) maxCoord = Math.max(maxCoord, m.r, m.c)
+  if (maxCoord <= 6) size.value = 's6'
+  else if (maxCoord <= 8) size.value = 's8'
+  else size.value = 's10'
   setBoardSize(size.value)
   const st = createBoard()
   const mv = []
@@ -95,8 +101,11 @@ function apply(dir, r, c, player) {
   if (!state.value || over.value || aiThinking.value) return false
   // 合法性校验（提前拦截非法边）
   const legal = legalMoves(state.value)
-  if (!legal.some(m => m.dir === dir && m.r === r && m.c === c)) {
-    console.warn('apply 拒绝非法边:', dir, r, c, '当前合法边数', legal.length)
+  const targetLegal = legal.some(m => m.dir === dir && m.r === r && m.c === c)
+  if (!targetLegal) {
+    console.warn('apply 拒绝非法边:', dir, r, c, 'legal=', legal.length,
+      '含目标?', targetLegal, 'size=', size.value,
+      'edges[H-3-0]=', state.value.edges['H-3-0'], 'edges[H-2-0]=', state.value.edges['H-2-0'])
     return false
   }
   const res = placeEdge(state.value, dir, r, c, player)
