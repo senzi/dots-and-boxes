@@ -35,70 +35,76 @@ function boxesShareEdge(a, b) {
   return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1
 }
 
-// 连续全吃路径：从起始边开始，每步吃格且与上一步完成的格相邻（平移1/公共端点）
-// 吃到换手（无连续可吃）为止；返回路径（边序列）或 null
-function simulateContinuousEat(state, startMove, player) {
+// 枚举完整吃路径（DFS）：尽可能连续吃（完成的格与上一步相邻），
+// 无法连续就换边吃（不相邻的可吃也吃）——总能吃到自然停（换手）为止。
+// 路径不会太多（连续优先——不会来回跳两个方向）；换边点分支有限。
+function enumerateFullPaths(state, startMove, player) {
+  const paths = []
   const sim = cloneState(state)
   const r0 = placeEdge(sim, startMove.dir, startMove.r, startMove.c, player)
-  if (!r0.gained) return null
-  const path = [{ dir: startMove.dir, r: startMove.r, c: startMove.c }]
-  let curBoxes = r0.completed || []
-  let guard = 0
-  while (guard++ < 20) {
-    const legal = legalMoves(sim)
-    const cand = []
+  if (!r0.gained) return paths
+  const startPath = [{ dir: startMove.dir, r: startMove.r, c: startMove.c }]
+  let explored = 0
+  function dfs(simState, path, lastBoxes) {
+    if (++explored > 128) return // 路径爆炸保护
+    const legal = legalMoves(simState)
+    const continuous = []
+    const others = []
     for (const x of legal) {
-      if (immediateGainFast(sim, moveKey(x)) === 0) continue
-      const test = cloneState(sim)
+      if (immediateGainFast(simState, moveKey(x)) === 0) continue
+      const test = cloneState(simState)
       const tr = placeEdge(test, x.dir, x.r, x.c, player)
       if (!tr.gained || !tr.completed) continue
-      // 完成的格与当前格相邻（连续）
-      if (tr.completed.some(b => curBoxes.some(cb => boxesAdjacent(b, cb)))) cand.push(x)
+      if (tr.completed.some(b => lastBoxes.some(cb => boxesAdjacent(b, cb)))) continuous.push(x)
+      else others.push(x)
     }
-    if (!cand.length) break // 无连续可吃 → 换手
-    const bestSelf = chooseCapture(sim, player, cand)
-    const res = placeEdge(sim, bestSelf.dir, bestSelf.r, bestSelf.c, player)
-    path.push({ dir: bestSelf.dir, r: bestSelf.r, c: bestSelf.c })
-    curBoxes = res.completed || []
-    if (!res.gained) break
+    // 尽可能连续；无连续才换边吃
+    const cand = continuous.length ? continuous : others
+    if (!cand.length) { paths.push(path); return } // 自然停（换手）
+    for (const x of cand) {
+      const ns = cloneState(simState)
+      const nr = placeEdge(ns, x.dir, x.r, x.c, player)
+      dfs(ns, [...path, { dir: x.dir, r: x.r, c: x.c }], nr.completed || [])
+    }
   }
-  return path
+  dfs(sim, startPath, r0.completed || [])
+  return paths
 }
 
-// 尝试找保权起始吃法（用户算法：连续全吃路径 → 回溯 V-2/V-4 手留尾巴）
-// keep（留几）：KEEP_BY_2=2、KEEP_BY_4=4。回溯的尾巴必须连续（日字/4格）。
-// 保权 = 吃 (路径长-keep) 格停 → 下一手补留的一根（停时局面 handoutMoves 的让块边）
+// 尝试找保权起始吃法（用户算法：枚举完整吃路径 → 回溯 V-2/V-4 留尾巴）
+// 尾巴（回溯的 keep 手）必须连续（日字/4格）；满足则存完整路径，执行到 stopAt 停
 function findKeepStart(state, captures, player, keep = 2) {
   let best = null
   for (const m of captures) {
-    const path = simulateContinuousEat(state, m, player)
-    if (!path || path.length <= keep) continue
-    // 回溯 keep 手：尾巴必须连续（两两共享边——日字/4格链）
-    const tail = path.slice(-keep)
-    let tailOk = true
-    for (let i = 1; i < tail.length; i++) {
-      // 相邻两手的格是否共享边（用 EDGE_BOXES 查每手完成的格）
-      const ga = EDGE_BOXES[edgeId(tail[i - 1].dir, tail[i - 1].r, tail[i - 1].c)]
-      const gb = EDGE_BOXES[edgeId(tail[i].dir, tail[i].r, tail[i].c)]
-      if (!ga || !gb) { tailOk = false; break }
-      if (!ga.some(a => gb.some(b => boxesShareEdge(a, b)))) { tailOk = false; break }
-    }
-    if (!tailOk) continue // 尾巴不连续 → 换路径
-    // 保权：吃 (路径长-keep) 格停；停时局面找让块边（补上留的一根——应唯一）
-    const eatCount = path.length - keep
-    const simStop = cloneState(state)
-    for (let i = 0; i < eatCount; i++) placeEdge(simStop, path[i].dir, path[i].r, path[i].c, player)
-    let handoutMove = null
-    const sm = legalMoves(simStop)
-    const sd = unclaimedDegrees(simStop)
-    const sh = handoutMoves(simStop, sm, sd)
-    if (sh.length) {
-      const smallestGift = Math.min(...sh.map(item => item.gift))
-      const h = sh.filter(item => item.gift === smallestGift)[0]
-      handoutMove = h.move
-    }
-    if (!best || eatCount > best.remaining) {
-      best = { startMove: m, remaining: eatCount, gift: keep, handoutMove }
+    const paths = enumerateFullPaths(state, m, player)
+    for (const path of paths) {
+      if (path.length <= keep) continue
+      // 回溯 keep 手：尾巴必须连续（两两共享边——日字/4格链）
+      const tail = path.slice(-keep)
+      let tailOk = true
+      for (let i = 1; i < tail.length; i++) {
+        const ga = EDGE_BOXES[edgeId(tail[i - 1].dir, tail[i - 1].r, tail[i - 1].c)]
+        const gb = EDGE_BOXES[edgeId(tail[i].dir, tail[i].r, tail[i].c)]
+        if (!ga || !gb) { tailOk = false; break }
+        if (!ga.some(a => gb.some(b => boxesShareEdge(a, b)))) { tailOk = false; break }
+      }
+      if (!tailOk) continue // 尾巴不连续 → 换路径
+      // 保权：吃到 (路径长-keep) 停——留尾巴 keep 格；停时局面找让块边（补上留的一根）
+      const stopAt = path.length - keep
+      const simStop = cloneState(state)
+      for (let i = 0; i < stopAt; i++) placeEdge(simStop, path[i].dir, path[i].r, path[i].c, player)
+      let handoutMove = null
+      const sm = legalMoves(simStop)
+      const sd = unclaimedDegrees(simStop)
+      const sh = handoutMoves(simStop, sm, sd)
+      if (sh.length) {
+        const smallestGift = Math.min(...sh.map(item => item.gift))
+        const h = sh.filter(item => item.gift === smallestGift)[0]
+        handoutMove = h.move
+      }
+      if (!best || stopAt > best.stopAt) {
+        best = { startMove: m, path, stopAt, gift: keep, handoutMove }
+      }
     }
   }
   return best
@@ -1018,9 +1024,18 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
     if (keepOnReceive && !l4plan) {
       const kp = receiveKeepPlans.get(state)
       if (kp) {
-        if (kp.remaining > 0) {
+        if (kp.step !== undefined && kp.step < kp.stopAt) {
+          // 严格按路径执行（计划 = 执行——100% 兑现 DFS 完整路径）
+          const pm = kp.path[kp.step]
+          kp.step++
+          const legalSet = new Set(moves.map(m => moveKey(m)))
+          if (pm && legalSet.has(moveKey(pm))) return pm
+          // 路径边异常（不应发生）→ 退化为继续吃
+          return chooseCapture(state, player, captures)
+        }
+        if (kp.remaining !== undefined && kp.remaining > 0) {
           kp.remaining--
-          return chooseCapture(state, player, captures) // 继续吃（吃够留几前）
+          return chooseCapture(state, player, captures) // 兜底：贪心吃到留几前
         }
         receiveKeepPlans.delete(state)
         // 停：补上留的一根——放让块边（让尾巴 2/4 可吃）；无让块边则下非吃格边
@@ -1071,7 +1086,7 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
       }
       const found = findKeepStart(state, captures, player, keep)
       if (found) {
-        receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
+        receiveKeepPlans.set(state, { path: found.path, step: 1, stopAt: found.stopAt, handoutMove: found.handoutMove || null })
         return found.startMove
       }
       // 兜底保权（Flag 不能亮）：连续路径失败 → 按块值数格停（吃 V-keep 留 keep——保权动作）
