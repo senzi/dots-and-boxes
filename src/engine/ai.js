@@ -23,56 +23,82 @@ const l4Plans = new WeakMap()
 // L5 接块方保权计划（跨步）：state → { remaining: 剩余可吃格数, handoutMove: 让块边 }
 const receiveKeepPlans = new WeakMap()
 
-// 尝试找保权起始吃法（用户算法：从一头吃、留尾巴）
-// 对每个 capture 起始：模拟连击到自然停（记路径）→ 吃 E-2 停 → 模拟对手连击
-// 选"对手恰好吃 2（留尾巴恰好）"的起始；无严格解时选对手连击最接近 2 的
-function findKeepStart(state, captures, player) {
+// L5 前沿块结构缓存（单槽——每局顺序对弈）：安全阶段最后一条安全边时预存
+let frontierPlan = null // { blocks, boxBlock }
+
+// 格子相邻判定（8邻域：平移1个单位或公共端点）
+function boxesAdjacent(a, b) {
+  return Math.abs(a.r - b.r) <= 1 && Math.abs(a.c - b.c) <= 1
+}
+// 格子共享边（4邻域——日字/链的"连续"）
+function boxesShareEdge(a, b) {
+  return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1
+}
+
+// 连续全吃路径：从起始边开始，每步吃格且与上一步完成的格相邻（平移1/公共端点）
+// 吃到换手（无连续可吃）为止；返回路径（边序列）或 null
+function simulateContinuousEat(state, startMove, player) {
+  const sim = cloneState(state)
+  const r0 = placeEdge(sim, startMove.dir, startMove.r, startMove.c, player)
+  if (!r0.gained) return null
+  const path = [{ dir: startMove.dir, r: startMove.r, c: startMove.c }]
+  let curBoxes = r0.completed || []
+  let guard = 0
+  while (guard++ < 20) {
+    const legal = legalMoves(sim)
+    const cand = []
+    for (const x of legal) {
+      if (immediateGainFast(sim, moveKey(x)) === 0) continue
+      const test = cloneState(sim)
+      const tr = placeEdge(test, x.dir, x.r, x.c, player)
+      if (!tr.gained || !tr.completed) continue
+      // 完成的格与当前格相邻（连续）
+      if (tr.completed.some(b => curBoxes.some(cb => boxesAdjacent(b, cb)))) cand.push(x)
+    }
+    if (!cand.length) break // 无连续可吃 → 换手
+    const bestSelf = chooseCapture(sim, player, cand)
+    const res = placeEdge(sim, bestSelf.dir, bestSelf.r, bestSelf.c, player)
+    path.push({ dir: bestSelf.dir, r: bestSelf.r, c: bestSelf.c })
+    curBoxes = res.completed || []
+    if (!res.gained) break
+  }
+  return path
+}
+
+// 尝试找保权起始吃法（用户算法：连续全吃路径 → 回溯 V-2/V-4 手留尾巴）
+// keep（留几）：KEEP_BY_2=2、KEEP_BY_4=4。回溯的尾巴必须连续（日字/4格）。
+// 保权 = 吃 (路径长-keep) 格停 → 下一手补留的一根（停时局面 handoutMoves 的让块边）
+function findKeepStart(state, captures, player, keep = 2) {
   let best = null
   for (const m of captures) {
-    const sim = cloneState(state)
-    const first = placeEdge(sim, m.dir, m.r, m.c, player)
-    const path = [{ dir: m.dir, r: m.r, c: m.c }]
-    let guard = 0
-    while (guard++ < 8) {
-      const sc = legalMoves(sim).filter(x => immediateGainFast(sim, moveKey(x)) > 0)
-      if (!sc.length) break
-      const bestSelf = chooseCapture(sim, player, sc)
-      const res = placeEdge(sim, bestSelf.dir, bestSelf.r, bestSelf.c, player)
-      path.push({ dir: bestSelf.dir, r: bestSelf.r, c: bestSelf.c })
-      if (!res.gained) break
+    const path = simulateContinuousEat(state, m, player)
+    if (!path || path.length <= keep) continue
+    // 回溯 keep 手：尾巴必须连续（两两共享边——日字/4格链）
+    const tail = path.slice(-keep)
+    let tailOk = true
+    for (let i = 1; i < tail.length; i++) {
+      // 相邻两手的格是否共享边（用 EDGE_BOXES 查每手完成的格）
+      const ga = EDGE_BOXES[edgeId(tail[i - 1].dir, tail[i - 1].r, tail[i - 1].c)]
+      const gb = EDGE_BOXES[edgeId(tail[i].dir, tail[i].r, tail[i].c)]
+      if (!ga || !gb) { tailOk = false; break }
+      if (!ga.some(a => gb.some(b => boxesShareEdge(a, b)))) { tailOk = false; break }
     }
-    if (path.length < 3) continue // 保权空间不足（至少吃 2 停留尾巴）
-    // 模拟：吃 2 停（留尾巴给对手——用户验证的 V-1-0/V-3-0 路径）→ 对手连击能吃多少 + 停时让块边
-    const stopAt = Math.min(2, path.length - 1)
-    const sim2 = cloneState(state)
-    for (let i = 0; i < stopAt; i++) placeEdge(sim2, path[i].dir, path[i].r, path[i].c, player)
-    // 停时找让块边（补上留的一根——让尾巴 2/4 可吃）
+    if (!tailOk) continue // 尾巴不连续 → 换路径
+    // 保权：吃 (路径长-keep) 格停；停时局面找让块边（补上留的一根——应唯一）
+    const eatCount = path.length - keep
+    const simStop = cloneState(state)
+    for (let i = 0; i < eatCount; i++) placeEdge(simStop, path[i].dir, path[i].r, path[i].c, player)
     let handoutMove = null
-    const sm2 = legalMoves(sim2)
-    const sd2 = unclaimedDegrees(sim2)
-    const sh2 = handoutMoves(sim2, sm2, sd2)
-    if (sh2.length) {
-      const smallestGift = Math.min(...sh2.map(item => item.gift))
-      const h2 = sh2.filter(item => item.gift === smallestGift)[0]
-      handoutMove = h2.move
+    const sm = legalMoves(simStop)
+    const sd = unclaimedDegrees(simStop)
+    const sh = handoutMoves(simStop, sm, sd)
+    if (sh.length) {
+      const smallestGift = Math.min(...sh.map(item => item.gift))
+      const h = sh.filter(item => item.gift === smallestGift)[0]
+      handoutMove = h.move
     }
-    let oppEaten = 0
-    let g2 = 0
-    while (g2++ < 8) {
-      const om = legalMoves(sim2)
-      const oc = om.filter(x => immediateGainFast(sim2, moveKey(x)) > 0)
-      if (!oc.length) break
-      const bo = chooseCapture(sim2, 1 - player, oc)
-      const ores = placeEdge(sim2, bo.dir, bo.r, bo.c, 1 - player)
-      oppEaten += ores.gained
-      if (!ores.gained) break
-    }
-    // 评分：吃最少格停优先（保守保权——少吃多留，用户验证的 V-1-0 吃 2 停）
-    // 次优：对手连击接近 2（留尾巴恰好）
-    const keepScore = oppEaten === 2 ? 0 : Math.abs(oppEaten - 2) + 10
-    const score = stopAt * 100 + keepScore - (handoutMove ? 0.5 : 0)
-    if (!best || score < best.score) {
-      best = { startMove: m, remaining: stopAt, gift: 2, oppEaten, score, handoutMove }
+    if (!best || eatCount > best.remaining) {
+      best = { startMove: m, remaining: eatCount, gift: keep, handoutMove }
     }
   }
   return best
@@ -1042,8 +1068,23 @@ export function aiMoveLevel4With(state, player, lastMove = null, controlOwner = 
         if (nonCapture.length) return chooseStableRandom(state, nonCapture)
         return chooseCapture(state, player, captures)
       }
-      // 无计划 → 找保权起始吃法（从一头吃、留尾巴、补让块边）
-      const found = findKeepStart(state, captures, player)
+      // 无计划 → 找保权起始吃法（连续全吃路径 → 回溯 V-2/V-4 留尾巴）
+      // keep 从 frontierPlan 块来（KEEP_BY_2→2、KEEP_BY_4→4）；查不到默认 2
+      let keep = 2
+      if (frontierPlan && lastMove) {
+        const edgeBoxes = EDGE_BOXES[edgeId(lastMove.dir, lastMove.r, lastMove.c)]
+        if (edgeBoxes) {
+          for (const b of edgeBoxes) {
+            const bi = frontierPlan.boxBlock.get(`${b.r}-${b.c}`)
+            if (bi !== undefined) {
+              const blk = frontierPlan.blocks[bi]
+              keep = blk.controlCode === 'KEEP_BY_4' ? 4 : 2
+              break
+            }
+          }
+        }
+      }
+      const found = findKeepStart(state, captures, player, keep)
       if (found) {
         receiveKeepPlans.set(state, { remaining: found.remaining - 1, handoutMove: found.handoutMove || null })
         return found.startMove
@@ -1148,6 +1189,19 @@ export function aiMoveLevel5(state, player, lastMove = null, controlOwner = null
   const analysis = createL3Analysis()
   const captures = moves.filter(move => immediateGainFast(state, moveKey(move)) > 0)
   const safe = moves.filter(move => immediateGainFast(state, moveKey(move)) === 0 && moveDanger(state, move.dir, move.r, move.c, player) === 0)
+  // 安全阶段最后一条安全边时预存前沿块结构（每局一次，接块保权用）
+  if (safe.length === 1 && captures.length === 0) {
+    try {
+      const sim = cloneState(state)
+      placeEdge(sim, safe[0].dir, safe[0].r, safe[0].c, player)
+      const pred = L4Bridge.l4Predict(sim, 1 - player)
+      const edgeCount = Object.keys(state.edges).length
+      const cols = edgeCount === 82 ? 6 : edgeCount === 142 ? 8 : 10
+      const boxBlock = new Map()
+      pred.blocks.forEach((b, bi) => b.boxes.forEach(box => boxBlock.set(`${Math.floor(box / cols)}-${box % cols}`, bi)))
+      frontierPlan = { blocks: pred.blocks, boxBlock }
+    } catch (e) { frontierPlan = null }
+  }
   const controller = controlOwner === 0 || controlOwner === 1 ? controlOwner : player
   const hasControl = player === controller
   console.log(`[L5] P${player} · 控制权P${controller}·hasControl=${hasControl} · 安全边${safe.length} · 可吃${captures.length}条(${captures.slice(0,4).map(m => m.dir + '-' + m.r + '-' + m.c).join(',')})`)
