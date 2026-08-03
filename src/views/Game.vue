@@ -317,7 +317,8 @@ onMounted(() => {
 /* 竖屏（手机/iPad 竖放）：上下对坐 —— 玩家0 卡片在上（倒转 180° 朝向下端玩家）、棋盘垂直居中、玩家1 卡片在下（正着朝向上端玩家） */
 @media (max-width: 860px) and (orientation: portrait) {
   /* 页面上下 padding 对称 + 顶栏悬浮不占流 → face-layout 撑满剩余空间，棋盘精确垂直居中 */
-  .game-page { padding: 56px 16px; }
+  /* min-height 用 lvh（地址栏收起时的大视口）：dvh 会随浏览器地址栏变化，真机上棋盘会相对物理屏偏上 */
+  .game-page { min-height: 100vh; min-height: 100lvh; padding: 56px 16px; }
   .game-page > .row-between { position: absolute; top: 8px; left: 16px; right: 16px; }
   .face-layout {
     flex-direction: column;
