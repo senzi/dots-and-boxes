@@ -139,24 +139,32 @@ function controlMeaning(value, gift) {
   return { code: 'TAKE_ALL', label: '全吃开块', parity: 1 }
 }
 
-// 环检测（用户算法）：从块的开口（3 边格）开始，连续优先全吃（每步相邻——平行/共点）
-// 如果存在一条覆盖整个块且全程连续的吃路径 → 环 → 留 4（KEEP_BY_4）
+// 环检测（用户算法）：环 = 连续 + 首尾相接（闭合）
+// 检查是否存在覆盖全块的简单路径且首尾相接（汉密尔顿环——4邻域共享边）——
+// 单纯路径连续（长条/链/田字群/对角连体）无 4邻域环——不是环——KEEP_BY_2
 function isRingBlock(board, startMask, boxes) {
   if (boxes.length < 4) return false
-  const starters = boxes.filter(box => board.bitCount(startMask & board.boxes[box].mask) === 3)
-  if (!starters.length) return false
-  const adjacent = (a, b) => Math.abs(a.r - b.r) <= 1 && Math.abs(a.c - b.c) <= 1
-  for (const s of starters) {
-    const eaten = new Set([s])
-    const queue = [s]
-    while (queue.length) {
-      const cur = queue.shift()
-      for (const b of boxes) {
-        if (eaten.has(b)) continue
-        if (adjacent(board.boxes[cur], board.boxes[b])) { eaten.add(b); queue.push(b) }
-      }
+  const bs = boxes.map(i => board.boxes[i])
+  // 首尾相接用 4 邻域（共享边）——"相接"必须真的连边，对角共点不算
+  const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1
+  const n = bs.length
+  const adjList = bs.map((a, i) => bs.map((b, j) => j).filter(j => j !== i && adjacent(a, bs[j])))
+  // 汉密尔顿环 DFS：覆盖所有格且首尾相接（任一起点有环即可）
+  let nodes = 0
+  function dfs(cur, visited, count) {
+    if (++nodes > 2000) return false // 剪枝保护（超限视为无环——保守 KEEP_BY_2）
+    if (count === n) return adjacent(bs[cur], bs[0])
+    for (const nx of adjList[cur]) {
+      if (visited.has(nx)) continue
+      visited.add(nx)
+      if (dfs(nx, visited, count + 1)) return true
+      visited.delete(nx)
     }
-    if (eaten.size === boxes.length) return true // 全程连续覆盖全块 → 环
+    return false
+  }
+  for (let s = 0; s < n; s++) {
+    const visited = new Set([s])
+    if (dfs(s, visited, 1)) return true
   }
   return false
 }
