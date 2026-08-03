@@ -123,12 +123,13 @@ function apply(dir, r, c, player, force = false) {
   return true
 }
 function onBoardPlace(move) {
-  if (current.value !== 0) { showToast('现在是 P1(AI) 回合，点右侧 L4/L5 按钮'); return }
-  if (apply(move.dir, move.r, move.c, 0)) {
-    if (current.value === 0) showToast('吃格连击，继续你的回合')
-    else showToast('轮到 P1(AI) —— 点右侧按钮')
+  // 当前是谁就替谁下（P0 手动 / P1 替 AI）
+  if (apply(move.dir, move.r, move.c, current.value)) {
+    if (current.value === 0) showToast('轮到 P1(AI) —— 点右侧按钮或直接点棋盘替 AI')
+    else showToast('轮到 P0 —— 你来')
   }
 }
+// AI 连击：下到换手为止（AI 吃格时自动继续）
 function aiMove(level) {
   if (!state.value || over.value) { showToast('先加载序列'); return }
   if (aiThinking.value) { showToast('AI 思考中…'); return }
@@ -136,28 +137,55 @@ function aiMove(level) {
   aiThinking.value = true
   showToast(`L${level} 思考中…`)
   setTimeout(() => {
+    let movesMade = 0
     try {
-      let move = getAiMove(level, state.value, 1, lastMove.value, controlOwner.value)
-      if (move) {
-        // 防御：AI 返回非法/已填边 → 自动回退一条合法安全边（绝不卡死）
+      let guard = 0
+      while (current.value === 1 && !over.value && guard++ < 60) {
+        let move = getAiMove(level, state.value, 1, lastMove.value, controlOwner.value)
+        if (!move) break
+        // 防御：AI 返回非法边 → 随机回退合法边
         const legal = legalMoves(state.value)
         if (!legal.some(m => m.dir === move.dir && m.r === move.r && m.c === move.c)) {
           console.error('AI 返回非法边，回退:', move, 'legal=', legal.length)
-          const fb = legal[Math.floor(Math.random() * legal.length)]
-          move = fb
-          showToast(`L${level} 非法边已回退：${fb.dir}-${fb.r}-${fb.c}`)
+          move = legal[Math.floor(Math.random() * legal.length)]
         }
         const ok = apply(move.dir, move.r, move.c, 1, true)
-        if (ok) {
-          showToast(`L${level} 下了 ${move.dir}-${move.r}-${move.c}${current.value === 1 ? '，连击继续' : '，轮到你'}`)
-        } else {
-          showToast(`L${level} 落子被拒绝：${move.dir}-${move.r}-${move.c}`)
-          console.error('AI 落子被拒:', move, 'current=', current.value)
-        }
-      } else showToast('AI 无子可下')
+        if (!ok) break
+        movesMade++
+      }
+      if (movesMade) showToast(`L${level} 下了 ${movesMade} 手${current.value === 1 ? '（连击）' : '，轮到你'}`)
+      else showToast('AI 无子可下')
     } catch (e) {
       showToast('AI 异常: ' + e.message)
       console.error('aiMove error', e)
+    } finally {
+      aiThinking.value = false
+    }
+  }, 30)
+}
+// AI vs AI 自动对弈到终盘（验证用：AI 打赢自己/对手）
+function autoPlay(l0, l1) {
+  if (!state.value || over.value) { showToast('先加载序列'); return }
+  if (aiThinking.value) return
+  aiThinking.value = true
+  showToast(`自动对弈 L${l0} vs L${l1} …`)
+  setTimeout(() => {
+    try {
+      let guard = 0
+      while (!over.value && guard++ < 300) {
+        const level = current.value === 0 ? l0 : l1
+        const move = getAiMove(level, state.value, current.value, lastMove.value, controlOwner.value)
+        if (!move) break
+        const legal = legalMoves(state.value)
+        const ok = legal.some(m => m.dir === move.dir && m.r === move.r && m.c === move.c)
+        if (!ok) break
+        apply(move.dir, move.r, move.c, current.value, true)
+      }
+      const [a, b] = scores(state.value)
+      showToast(`对弈结束：${a}:${b}`)
+    } catch (e) {
+      showToast('自动对弈异常: ' + e.message)
+      console.error('autoPlay error', e)
     } finally {
       aiThinking.value = false
     }
@@ -226,7 +254,8 @@ onMounted(() => setBoardSize(size.value))
           :last-move="lastMove"
           :grid-size="gridSize"
           :interactive="true"
-          :disabled="over || aiThinking || current !== 0"
+          :show-coords="true"
+          :disabled="over || aiThinking"
           @place="onBoardPlace"
         />
         <div v-else class="lab-empty">加载序列后显示棋盘</div>
@@ -251,6 +280,12 @@ onMounted(() => setBoardSize(size.value))
         <div class="row gap-8 mt-8">
           <button class="btn btn-outline btn-sm" :disabled="aiThinking" @click="aiMove(4)">L4 下</button>
           <button class="btn btn-outline btn-sm" :disabled="aiThinking" @click="aiMove(5)">L5 下</button>
+        </div>
+
+        <div class="caption mt-16">自动对弈（验证 AI 打赢自己）</div>
+        <div class="row gap-8 mt-8">
+          <button class="btn btn-outline btn-sm" :disabled="aiThinking" @click="autoPlay(5, 5)">L5 vs L5</button>
+          <button class="btn btn-outline btn-sm" :disabled="aiThinking" @click="autoPlay(4, 5)">L4 vs L5</button>
         </div>
 
         <div class="caption mt-16">局面码</div>

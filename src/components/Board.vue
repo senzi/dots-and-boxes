@@ -9,7 +9,8 @@ const props = defineProps({
   lastMove: { type: Object, default: null },    // {dir,r,c,player}
   interactive: { type: Boolean, default: true },
   disabled: { type: Boolean, default: false },
-  gridSize: { type: Number, default: 8 }      // 方格数（8 或 6）
+  gridSize: { type: Number, default: 8 },      // 方格数（8 或 6）
+  showCoords: { type: Boolean, default: false } // 边缘坐标标注（实验室调试用）
 })
 const emit = defineEmits(['place'])
 
@@ -138,6 +139,12 @@ function onPlace(e) {
       />
     </g>
 
+    <!-- 坐标标注（实验室） -->
+    <g v-if="showCoords" class="coords">
+      <text v-for="c in G" :key="`cc-${c}`" :x="px(c) + CELL / 2" :y="M - 14" text-anchor="middle" class="coord-label">{{ c }}</text>
+      <text v-for="r in G" :key="`cr-${r}`" :x="M - 14" :y="py(r) + CELL / 2" text-anchor="middle" class="coord-label">{{ r }}</text>
+    </g>
+
     <!-- 点 -->
     <circle
       v-for="p in dots"
@@ -189,6 +196,12 @@ function onPlace(e) {
 @keyframes last-move-pulse {
   from { opacity: 0.58; stroke-width: 11; }
   to { opacity: 0.95; stroke-width: 14; }
+}
+.coord-label {
+  font-size: 12px;
+  fill: var(--muted);
+  opacity: 0.7;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
 }
 
 /* 点 */
