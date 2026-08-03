@@ -116,18 +116,38 @@ function findKeepStart(state, captures, player, keep = 2) {
         if (!ga.some(a => gb.some(b => boxesShareEdge(a, b)))) { tailOk = false; break }
       }
       if (!tailOk) continue // 尾巴不连续 → 换路径
-      // 保权：吃到 (路径长-keep) 停——留尾巴 keep 格；停时局面找让块边（补上留的一根）
+      // 保权：吃到 (路径长-keep) 停——留尾巴 keep 格；停时找让块边（补上留的一根）
       const stopAt = path.length - keep
       const simStop = cloneState(state)
       for (let i = 0; i < stopAt; i++) placeEdge(simStop, path[i].dir, path[i].r, path[i].c, player)
+      // handoutMove 必须"让对手恰好吃尾巴 keep 格"（补留的一根）——
+      // 不能是开新地（让对手吃别的块——送分且主动权丢）
+      const tailBoxes = new Set()
+      for (let i = path.length - keep; i < path.length; i++) {
+        const eb = EDGE_BOXES[edgeId(path[i].dir, path[i].r, path[i].c)]
+        if (eb) eb.forEach(b => tailBoxes.add(`${b.r}-${b.c}`))
+      }
       let handoutMove = null
       const sm = legalMoves(simStop)
       const sd = unclaimedDegrees(simStop)
       const sh = handoutMoves(simStop, sm, sd)
-      if (sh.length) {
-        const smallestGift = Math.min(...sh.map(item => item.gift))
-        const h = sh.filter(item => item.gift === smallestGift)[0]
-        handoutMove = h.move
+      for (const h of sh) {
+        const test = cloneState(simStop)
+        placeEdge(test, h.move.dir, h.move.r, h.move.c, player)
+        let oppBoxes = new Set()
+        let g2 = 0
+        while (g2++ < 12) {
+          const oc = legalMoves(test).filter(x => immediateGainFast(test, moveKey(x)) > 0)
+          if (!oc.length) break
+          const bo = chooseCapture(test, 1 - player, oc)
+          const ores = placeEdge(test, bo.dir, bo.r, bo.c, 1 - player)
+          if (ores.completed) ores.completed.forEach(b => oppBoxes.add(`${b.r}-${b.c}`))
+          if (!ores.gained) break
+        }
+        if (oppBoxes.size === keep && [...oppBoxes].every(b => tailBoxes.has(b))) {
+          handoutMove = h.move // 让对手恰好吃尾巴 keep 格（补留的一根）
+          break
+        }
       }
       if (!best || stopAt > best.stopAt) {
         best = { startMove: m, path, stopAt, gift: keep, handoutMove }
